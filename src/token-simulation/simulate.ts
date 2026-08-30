@@ -29,22 +29,45 @@ import {
   getTokenSimulationBpmnModeler,
   getTokenSimulationWindow,
 } from './headless-canvas';
-import { namedTokens, parseScenario, type Scenario, type ScenarioStep } from './scenario';
+import type { OnProgress } from './progress';
+import {
+  exportScenarioTemplate,
+  namedTokens,
+  parseScenario,
+  type Scenario,
+  type ScenarioStep,
+} from './scenario';
 import { installVirtualClock } from './virtual-clock';
+
+/** Frame rate used when neither `fps` nor `smooth` is given, nor the scenario's own `fps`. Fast to render — meant for iterating on a scenario. */
+export const DEFAULT_FPS = 12;
+/** Frame rate used by `smooth: true` — a "final render" preset, smoother than is worth the extra render cost by default. */
+export const SMOOTH_FPS = 30;
 
 export interface RenderScenarioOptions {
   /** Additional/overriding moddle extensions, merged with the Camunda defaults. */
   moddleExtensions?: Record<string, unknown>;
   /**
-   * Rendered animation frame rate, overriding the scenario's own `fps`
-   * (which itself defaults to 12). Higher values trade smoother token
-   * motion for proportionally more frames to rasterize and encode.
+   * Rendered animation frame rate, overriding both `smooth` and the
+   * scenario's own `fps`. Higher values trade smoother token motion for
+   * proportionally more frames to rasterize and encode.
    */
   fps?: number;
+  /**
+   * Render at a smoother preset frame rate ({@link SMOOTH_FPS}) instead of
+   * the fast default ({@link DEFAULT_FPS}) — meant for the final render
+   * once you're happy with a scenario, after iterating on it at the
+   * cheaper default. Ignored when `fps` is set explicitly; overrides the
+   * scenario's own `fps` (this is a rendering-quality choice, not part of
+   * the scenario itself).
+   */
+  smooth?: boolean;
   /** Extra ms of animation to keep rendering after the last scheduled event step. Default: 2000. */
   tailMs?: number;
   /** Hard cap on total simulated time, guarding against scenarios that never settle. Default: 30000. */
   maxDurationMs?: number;
+  /** Called once per rendered frame while driving the simulation. */
+  onProgress?: OnProgress;
 }
 
 export interface AnimationFrame {
@@ -208,15 +231,20 @@ function validateScenario(
  * Render a BPMN diagram's token-simulation animation, driven by a
  * scenario's named tokens, into a sequence of SVG frames at a fixed
  * virtual frame rate.
+ *
+ * `scenarioToml` is optional — omit it (or pass `undefined`) to render the
+ * diagram's own default scenario (see `exportScenarioTemplate`): one token
+ * per start event, walking the first-outgoing-flow path through every
+ * gateway, same as the interactive tool with no clicks at all.
  */
 export async function renderScenarioFrames(
   xml: string,
-  scenarioToml: string,
+  scenarioToml?: string,
   options: RenderScenarioOptions = {}
 ): Promise<RenderScenarioResult> {
-  const scenario: Scenario = parseScenario(scenarioToml);
+  const scenario: Scenario = parseScenario(scenarioToml ?? (await exportScenarioTemplate(xml)));
   const tokens = namedTokens(scenario);
-  const fps = options.fps ?? scenario.fps ?? 12;
+  const fps = options.fps ?? (options.smooth ? SMOOTH_FPS : (scenario.fps ?? DEFAULT_FPS));
   const frameDurationMs = 1000 / fps;
   const tailMs = options.tailMs ?? 2000;
   const maxDurationMs = options.maxDurationMs ?? 30000;
@@ -268,6 +296,7 @@ export async function renderScenarioFrames(
 
     const tokenNames = tracker.tokenNames();
     const frames: AnimationFrame[] = [];
+    const totalFrames = Math.floor(stopAt / frameDurationMs) + 1;
 
     for (let t = 0; t <= stopAt; t += frameDurationMs) {
       for (const tokenName of tokenNames) {
@@ -278,6 +307,7 @@ export async function renderScenarioFrames(
 
       const { svg } = await modeler.saveSVG();
       frames.push({ atMs: t, svg: tightenSvgViewBox(svg || '', elementRegistry.getAll()) });
+      options.onProgress?.({ phase: 'simulate', current: frames.length, total: totalFrames });
     }
 
     const unconsumed = tracker.unconsumedSteps();
