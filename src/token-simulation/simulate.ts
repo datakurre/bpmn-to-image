@@ -18,6 +18,12 @@ import { installVirtualClock } from './virtual-clock';
 export interface RenderScenarioOptions {
   /** Additional/overriding moddle extensions, merged with the Camunda defaults. */
   moddleExtensions?: Record<string, unknown>;
+  /**
+   * Rendered animation frame rate, overriding the scenario's own `fps`
+   * (which itself defaults to 12). Higher values trade smoother token
+   * motion for proportionally more frames to rasterize and encode.
+   */
+  fps?: number;
   /** Extra ms of animation to keep rendering after the last scheduled trigger. Default: 2000. */
   tailMs?: number;
   /** Hard cap on total simulated time, guarding against scenarios that never settle. Default: 30000. */
@@ -92,7 +98,7 @@ export async function renderScenarioFrames(
   options: RenderScenarioOptions = {}
 ): Promise<RenderScenarioResult> {
   const scenario: Scenario = parseScenario(scenarioToml);
-  const fps = scenario.fps ?? 12;
+  const fps = options.fps ?? scenario.fps ?? 12;
   const frameDurationMs = 1000 / fps;
   const tailMs = options.tailMs ?? 2000;
   const maxDurationMs = options.maxDurationMs ?? 30000;

@@ -25,6 +25,7 @@ bpmn-to-image [options] [input] [output]
 - `-f, --format <svg|png|gif>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout.
 - `-s, --scale <number>` — pixel density multiplier (PNG/GIF). Default: `2`.
 - `--scenario <file>` — render an animated token-simulation GIF, driven by this TOML scenario file (see [Animated executions](#animated-executions)).
+- `--fps <number>` — animation frame rate, overriding the scenario's own `fps` (default: `12`). Higher values trade smoother token motion for proportionally more frames to render.
 - `--export-scenario` — write a scenario TOML scaffold for the input diagram instead of rendering an image.
 
 ```bash
@@ -86,6 +87,8 @@ const gif = await renderScenarioToGif(xml, scenarioToml);
 ```
 
 A `[[trigger]]` either fires an event (`element` = a start/intermediate-catch/boundary event id, fired as soon as `at_ms` has elapsed and the diagram is actually waiting on it) or steers a gateway (`element` = the gateway id, `take` = the outgoing sequence flow id — or an array of ids, for an inclusive gateway fork). Gateways with no matching trigger default to their first outgoing flow, same as the interactive tool. `renderScenarioFrames` (SVG frames + timing, no GIF encoding) and `framesToGif` are also exported individually for custom pipelines.
+
+Token motion is real interpolated animation (not a jump per gateway/event), sampled at a fixed frame rate — the scenario's `fps` field, or the `fps` option/`--fps` flag, which overrides it. Raising it renders more, smoother frames at proportionally higher cost; the default (`12`) is a reasonable balance for GIF output.
 
 ## Fonts
 

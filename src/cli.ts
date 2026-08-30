@@ -21,6 +21,7 @@ interface CliOptions {
   scale: number;
   scenario?: string;
   exportScenario: boolean;
+  fps?: number;
 }
 
 function printUsage(): void {
@@ -44,6 +45,9 @@ Options:
   -s, --scale <number>    Pixel density multiplier (PNG/GIF). Default: 2.
       --scenario <file>   Render an animated token-simulation GIF, driven by
                            this TOML scenario file (see --export-scenario).
+      --fps <number>      Animation frame rate, overriding the scenario's
+                           own "fps" (default: 12). Higher = smoother motion
+                           at proportionally more render cost.
       --export-scenario   Write a scenario TOML scaffold for the input
                            diagram (covering its gateways/events) instead of
                            rendering an image.
@@ -56,6 +60,7 @@ Examples:
   cat diagram.bpmn | bpmn-to-image --format png > diagram.png
   bpmn-to-image --export-scenario diagram.bpmn diagram.toml
   bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
+  bpmn-to-image --scenario diagram.toml --fps 24 diagram.bpmn diagram.gif
 `);
 }
 
@@ -72,6 +77,7 @@ function parseArgs(argv: string[]): CliOptions | null {
   let scale = 2;
   let scenario: string | undefined;
   let exportScenario = false;
+  let fps: number | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -106,6 +112,14 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '--scenario':
         scenario = argv[++i];
         break;
+      case '--fps': {
+        const value = Number(argv[++i]);
+        if (!isFinite(value) || value <= 0) {
+          throw new Error(`Invalid --fps value: ${argv[i]}. Expected a positive number.`);
+        }
+        fps = value;
+        break;
+      }
       case '--export-scenario':
         exportScenario = true;
         break;
@@ -121,7 +135,7 @@ function parseArgs(argv: string[]): CliOptions | null {
     format = (output !== '-' ? formatFromPath(output) : undefined) ?? (scenario ? 'gif' : 'svg');
   }
 
-  return { input, output, format, scale, scenario, exportScenario };
+  return { input, output, format, scale, scenario, exportScenario, fps };
 }
 
 function readStdin(): Promise<string> {
@@ -160,7 +174,10 @@ async function main(): Promise<void> {
   let rendered: Buffer;
   if (options.scenario) {
     const scenarioToml = fs.readFileSync(options.scenario, 'utf-8');
-    rendered = await renderScenarioToGif(xml, scenarioToml, { scale: options.scale });
+    rendered = await renderScenarioToGif(xml, scenarioToml, {
+      scale: options.scale,
+      fps: options.fps,
+    });
   } else if (options.format === 'png') {
     rendered = await renderToPng(xml, { scale: options.scale });
   } else if (options.format === 'gif') {

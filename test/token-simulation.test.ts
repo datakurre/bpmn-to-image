@@ -107,6 +107,20 @@ take = "Flow_reject"
     }
   });
 
+  test("the `fps` option overrides the scenario's own `fps`", async () => {
+    const scenarioToml = 'fps = 6\n[[trigger]]\nelement = "StartEvent_1"\n';
+
+    const atScenarioFps = await renderScenarioFrames(sampleXml, scenarioToml, { tailMs: 1200 });
+    expect(atScenarioFps.frameDurationMs).toBeCloseTo(1000 / 6, 5);
+
+    const atOverriddenFps = await renderScenarioFrames(sampleXml, scenarioToml, {
+      tailMs: 1200,
+      fps: 24,
+    });
+    expect(atOverriddenFps.frameDurationMs).toBeCloseTo(1000 / 24, 5);
+    expect(atOverriddenFps.frames.length).toBeGreaterThan(atScenarioFps.frames.length);
+  });
+
   test('rejects a scenario referencing an unknown element id', async () => {
     await expect(
       renderScenarioFrames(sampleXml, '[[trigger]]\nelement = "NoSuchElement"\n')
