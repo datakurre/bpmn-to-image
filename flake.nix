@@ -40,6 +40,14 @@
             # / broader Unicode coverage during local development).
             pkgs.liberation_ttf
             pkgs.dejavu_fonts
+
+            # Optional runtime enhancement for animated GIF/APNG rendering
+            # (see src/token-simulation/ffmpeg.ts): when `ffmpeg` is on PATH,
+            # animations use its two-pass palette GIF encoder (better color
+            # quality than the bundled pure-JS gifenc) and APNG becomes
+            # available. Detected at runtime — plain `npm install` users
+            # without ffmpeg still get a working (gifenc-only) GIF encoder.
+            pkgs.ffmpeg-headless
           ];
         };
 

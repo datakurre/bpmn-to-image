@@ -46,6 +46,7 @@
     "@resvg/resvg-js": "^2.6.2",
     "bpmn-js": "^18.26.0",
     "bpmn-js-token-simulation": "^0.40.0",
+    "bpmn-moddle": "^10.2.0",
     "camunda-bpmn-moddle": "^7.0.2",
     "gifenc": "^1.0.3",
     "jsdom": "^30.0.1",

@@ -6,18 +6,32 @@
  */
 
 export { renderToSvg, renderToPng, type RenderOptions, type RenderToPngOptions } from './render';
-export { svgToPng, svgToPngWithFallback, cropSvgToViewBox, tightenSvgViewBox } from './svg-to-png';
+export {
+  svgToPng,
+  svgToPngWithFallback,
+  cropSvgToViewBox,
+  tightenSvgViewBox,
+  rasterizeSvg,
+} from './svg-to-png';
 export { createModelerFromXml, type CreateModelerOptions } from './modeler';
 export {
   exportScenarioTemplate,
   parseScenario,
   renderScenarioFrames,
   renderScenarioToGif,
+  renderScenarioToApng,
   framesToGif,
+  framesToGifWithFfmpeg,
+  framesToApng,
+  isFfmpegAvailable,
   type Scenario,
-  type ScenarioTrigger,
+  type ScenarioStep,
+  type ScenarioToken,
   type AnimationFrame,
   type RenderScenarioOptions,
   type RenderScenarioResult,
+  type RenderScenarioToGifOptions,
   type FramesToGifOptions,
+  type FfmpegEncodeOptions,
+  type GifEncoder,
 } from './token-simulation';

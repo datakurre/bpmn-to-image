@@ -13,6 +13,7 @@ const nodeConfig = {
     'jsdom',
     'bpmn-js',
     'bpmn-js-token-simulation',
+    'bpmn-moddle',
     'camunda-bpmn-moddle',
     '@resvg/resvg-js',
     'gifenc',

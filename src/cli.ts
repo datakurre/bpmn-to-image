@@ -10,18 +10,24 @@
 
 import * as fs from 'node:fs';
 import { renderToPng, renderToSvg } from './render';
-import { exportScenarioTemplate, renderScenarioToGif } from './token-simulation';
+import {
+  exportScenarioTemplate,
+  renderScenarioToApng,
+  renderScenarioToGif,
+  type GifEncoder,
+} from './token-simulation';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version: PKG_VERSION } = require('../package.json') as { version: string };
 
 interface CliOptions {
   input: string;
   output: string;
-  format?: 'svg' | 'png' | 'gif';
+  format?: 'svg' | 'png' | 'gif' | 'apng';
   scale: number;
   scenario?: string;
   exportScenario: boolean;
   fps?: number;
+  encoder?: GifEncoder;
 }
 
 function printUsage(): void {
@@ -39,18 +45,24 @@ Arguments:
                           "-" to write to stdout.
 
 Options:
-  -f, --format <svg|png|gif>  Output format. Inferred from the output file
-                           extension when omitted; defaults to "svg" when
-                           writing to stdout.
-  -s, --scale <number>    Pixel density multiplier (PNG/GIF). Default: 2.
-      --scenario <file>   Render an animated token-simulation GIF, driven by
-                           this TOML scenario file (see --export-scenario).
+  -f, --format <svg|png|gif|apng>  Output format. Inferred from the output
+                           file extension when omitted; defaults to "svg"
+                           when writing to stdout. "apng" requires ffmpeg.
+  -s, --scale <number>    Pixel density multiplier (PNG/GIF/APNG). Default: 2.
+      --scenario <file>   Render an animated token-simulation GIF/APNG,
+                           driven by this TOML scenario file (see
+                           --export-scenario).
       --fps <number>      Animation frame rate, overriding the scenario's
                            own "fps" (default: 12). Higher = smoother motion
                            at proportionally more render cost.
+      --encoder <auto|gifenc|ffmpeg>
+                           GIF encoder. "auto" (default) prefers ffmpeg
+                           (better palette quality) when it's on PATH —
+                           provisioned by this repo's Nix flake — falling
+                           back to the bundled pure-JS gifenc otherwise.
       --export-scenario   Write a scenario TOML scaffold for the input
-                           diagram (covering its gateways/events) instead of
-                           rendering an image.
+                           diagram (covering its tokens/gateways/events)
+                           instead of rendering an image.
   -h, --help               Show this help message and exit.
       --version             Print the version and exit.
 
@@ -61,23 +73,26 @@ Examples:
   bpmn-to-image --export-scenario diagram.bpmn diagram.toml
   bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
   bpmn-to-image --scenario diagram.toml --fps 24 diagram.bpmn diagram.gif
+  bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.apng
 `);
 }
 
-function formatFromPath(filePath: string): 'svg' | 'png' | 'gif' | undefined {
+function formatFromPath(filePath: string): 'svg' | 'png' | 'gif' | 'apng' | undefined {
   if (filePath.endsWith('.png')) return 'png';
   if (filePath.endsWith('.svg')) return 'svg';
+  if (filePath.endsWith('.apng')) return 'apng';
   if (filePath.endsWith('.gif')) return 'gif';
   return undefined;
 }
 
 function parseArgs(argv: string[]): CliOptions | null {
   const positional: string[] = [];
-  let format: 'svg' | 'png' | 'gif' | undefined;
+  let format: 'svg' | 'png' | 'gif' | 'apng' | undefined;
   let scale = 2;
   let scenario: string | undefined;
   let exportScenario = false;
   let fps: number | undefined;
+  let encoder: GifEncoder | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -92,9 +107,9 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '-f':
       case '--format': {
         const value = argv[++i];
-        if (value !== 'svg' && value !== 'png' && value !== 'gif') {
+        if (value !== 'svg' && value !== 'png' && value !== 'gif' && value !== 'apng') {
           throw new Error(
-            `Invalid --format value: ${value ?? '(missing)'}. Expected "svg", "png", or "gif".`
+            `Invalid --format value: ${value ?? '(missing)'}. Expected "svg", "png", "gif", or "apng".`
           );
         }
         format = value;
@@ -123,6 +138,16 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '--export-scenario':
         exportScenario = true;
         break;
+      case '--encoder': {
+        const value = argv[++i];
+        if (value !== 'auto' && value !== 'gifenc' && value !== 'ffmpeg') {
+          throw new Error(
+            `Invalid --encoder value: ${value ?? '(missing)'}. Expected "auto", "gifenc", or "ffmpeg".`
+          );
+        }
+        encoder = value;
+        break;
+      }
       default:
         positional.push(arg);
     }
@@ -135,7 +160,7 @@ function parseArgs(argv: string[]): CliOptions | null {
     format = (output !== '-' ? formatFromPath(output) : undefined) ?? (scenario ? 'gif' : 'svg');
   }
 
-  return { input, output, format, scale, scenario, exportScenario, fps };
+  return { input, output, format, scale, scenario, exportScenario, fps, encoder };
 }
 
 function readStdin(): Promise<string> {
@@ -174,14 +199,22 @@ async function main(): Promise<void> {
   let rendered: Buffer;
   if (options.scenario) {
     const scenarioToml = fs.readFileSync(options.scenario, 'utf-8');
-    rendered = await renderScenarioToGif(xml, scenarioToml, {
-      scale: options.scale,
-      fps: options.fps,
-    });
+    if (options.format === 'apng') {
+      rendered = await renderScenarioToApng(xml, scenarioToml, {
+        scale: options.scale,
+        fps: options.fps,
+      });
+    } else {
+      rendered = await renderScenarioToGif(xml, scenarioToml, {
+        scale: options.scale,
+        fps: options.fps,
+        encoder: options.encoder,
+      });
+    }
   } else if (options.format === 'png') {
     rendered = await renderToPng(xml, { scale: options.scale });
-  } else if (options.format === 'gif') {
-    throw new Error('--format gif requires --scenario <file>');
+  } else if (options.format === 'gif' || options.format === 'apng') {
+    throw new Error(`--format ${options.format} requires --scenario <file>`);
   } else {
     rendered = Buffer.from(await renderToSvg(xml), 'utf-8');
   }

@@ -7,9 +7,8 @@
  * package already has for static PNG output.
  */
 
-import { Resvg } from '@resvg/resvg-js';
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
-import { cropSvgToViewBox, getSystemFontFiles } from '../svg-to-png';
+import { rasterizeSvg } from '../svg-to-png';
 import type { AnimationFrame } from './simulate';
 
 export interface FramesToGifOptions {
@@ -40,19 +39,8 @@ export function framesToGif(
   const maxColors = options.maxColors ?? 128;
   const repeat = options.repeat ?? 0;
 
-  const fontFiles = getSystemFontFiles();
-
   const rasterized = frames.map(({ svg }) => {
-    const resvg = new Resvg(cropSvgToViewBox(svg), {
-      fitTo: { mode: 'zoom' as const, value: scale },
-      font: {
-        fontFiles,
-        loadSystemFonts: false,
-        sansSerifFamily: 'Liberation Sans',
-        defaultFontFamily: 'Liberation Sans',
-      },
-    });
-    const rendered = resvg.render();
+    const rendered = rasterizeSvg(svg, scale);
     return { data: rendered.pixels, width: rendered.width, height: rendered.height };
   });
 

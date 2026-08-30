@@ -67,7 +67,10 @@ describe('bpmn-to-image CLI', () => {
     workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
     const scenarioPath = join(workDir, 'scenario.toml');
     const outPath = join(workDir, 'out.gif');
-    writeFileSync(scenarioPath, '[[trigger]]\nelement = "StartEvent_1"\n');
+    writeFileSync(
+      scenarioPath,
+      '[[token]]\nname = "t1"\n\n  [[token.step]]\n  element = "StartEvent_1"\n'
+    );
     execFileSync('node', [cliPath, '--scenario', scenarioPath, gatewayFixturePath, outPath]);
     const gif = readFileSync(outPath);
     expect(gif.subarray(0, 3).toString('ascii')).toBe('GIF');
