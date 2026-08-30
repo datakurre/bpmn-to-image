@@ -2,8 +2,6 @@
 
 Render [BPMN 2.0](https://www.omg.org/spec/BPMN/2.0/) XML to SVG or PNG headlessly — no browser, no Canvas / node-gyp build chain. Uses [bpmn-js](https://bpmn.io/toolkit/bpmn-js/) inside a [jsdom](https://github.com/jsdom/jsdom) environment (patched with the SVG/Canvas polyfills bpmn-js needs at runtime) and rasterizes with [@resvg/resvg-js](https://github.com/thx/resvg-js).
 
-Vendored and updated from the headless-rendering pipeline of [bpmn-js-mcp](https://github.com/datakurre/bpmn-js-mcp), stripped down to just BPMN → image conversion.
-
 ## Install
 
 ```bash
