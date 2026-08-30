@@ -29,7 +29,14 @@ import {
   getTokenSimulationBpmnModeler,
   getTokenSimulationWindow,
 } from './headless-canvas';
-import { namedTokens, parseScenario, type Scenario, type ScenarioStep } from './scenario';
+import type { OnProgress } from './progress';
+import {
+  exportScenarioTemplate,
+  namedTokens,
+  parseScenario,
+  type Scenario,
+  type ScenarioStep,
+} from './scenario';
 import { installVirtualClock } from './virtual-clock';
 
 export interface RenderScenarioOptions {
@@ -45,6 +52,8 @@ export interface RenderScenarioOptions {
   tailMs?: number;
   /** Hard cap on total simulated time, guarding against scenarios that never settle. Default: 30000. */
   maxDurationMs?: number;
+  /** Called once per rendered frame while driving the simulation. */
+  onProgress?: OnProgress;
 }
 
 export interface AnimationFrame {
@@ -208,13 +217,18 @@ function validateScenario(
  * Render a BPMN diagram's token-simulation animation, driven by a
  * scenario's named tokens, into a sequence of SVG frames at a fixed
  * virtual frame rate.
+ *
+ * `scenarioToml` is optional — omit it (or pass `undefined`) to render the
+ * diagram's own default scenario (see `exportScenarioTemplate`): one token
+ * per start event, walking the first-outgoing-flow path through every
+ * gateway, same as the interactive tool with no clicks at all.
  */
 export async function renderScenarioFrames(
   xml: string,
-  scenarioToml: string,
+  scenarioToml?: string,
   options: RenderScenarioOptions = {}
 ): Promise<RenderScenarioResult> {
-  const scenario: Scenario = parseScenario(scenarioToml);
+  const scenario: Scenario = parseScenario(scenarioToml ?? (await exportScenarioTemplate(xml)));
   const tokens = namedTokens(scenario);
   const fps = options.fps ?? scenario.fps ?? 12;
   const frameDurationMs = 1000 / fps;
@@ -268,6 +282,7 @@ export async function renderScenarioFrames(
 
     const tokenNames = tracker.tokenNames();
     const frames: AnimationFrame[] = [];
+    const totalFrames = Math.floor(stopAt / frameDurationMs) + 1;
 
     for (let t = 0; t <= stopAt; t += frameDurationMs) {
       for (const tokenName of tokenNames) {
@@ -278,6 +293,7 @@ export async function renderScenarioFrames(
 
       const { svg } = await modeler.saveSVG();
       frames.push({ atMs: t, svg: tightenSvgViewBox(svg || '', elementRegistry.getAll()) });
+      options.onProgress?.({ phase: 'simulate', current: frames.length, total: totalFrames });
     }
 
     const unconsumed = tracker.unconsumedSteps();

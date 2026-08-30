@@ -9,6 +9,7 @@
 
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 import { rasterizeSvg } from '../svg-to-png';
+import type { OnProgress } from './progress';
 import type { AnimationFrame } from './simulate';
 
 export interface FramesToGifOptions {
@@ -18,6 +19,8 @@ export interface FramesToGifOptions {
   maxColors?: number;
   /** GIF loop count: 0 = forever (default), -1 = play once. */
   repeat?: number;
+  /** Called once per frame while rasterizing SVG frames to pixels. */
+  onProgress?: OnProgress;
 }
 
 /**
@@ -39,8 +42,9 @@ export function framesToGif(
   const maxColors = options.maxColors ?? 128;
   const repeat = options.repeat ?? 0;
 
-  const rasterized = frames.map(({ svg }) => {
+  const rasterized = frames.map(({ svg }, i) => {
     const rendered = rasterizeSvg(svg, scale);
+    options.onProgress?.({ phase: 'rasterize', current: i + 1, total: frames.length });
     return { data: rendered.pixels, width: rendered.width, height: rendered.height };
   });
 

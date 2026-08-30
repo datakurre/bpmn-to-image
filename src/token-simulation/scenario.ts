@@ -211,8 +211,19 @@ function walkDefaultPath(element: any, ctx: WalkContext): void {
   }
 }
 
+/**
+ * Collapse a BPMN label to a single line for safe embedding in a TOML `#`
+ * comment — labels can contain literal line breaks (multi-line element
+ * names are common in BPMN diagrams), and a comment only extends to the
+ * end of its own line, so an embedded newline would leave the rest of the
+ * label as a stray, unparseable line in the generated TOML.
+ */
+function sanitizeComment(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 function formatStepLines(step: DiscoveredStep, indent: string): string[] {
-  const label = step.name ? ` # ${step.name}` : '';
+  const label = step.name ? ` # ${sanitizeComment(step.name)}` : '';
   const lines = [`${indent}[[token.step]]`, `${indent}element = "${step.element}"${label}`];
   if (step.takeAll) {
     lines.push(`${indent}take = [${step.takeAll.map((id) => `"${id}"`).join(', ')}]`);

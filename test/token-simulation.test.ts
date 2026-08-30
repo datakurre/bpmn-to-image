@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { isFfmpegAvailable } from '../src/token-simulation/ffmpeg';
+import { framesToMp4, framesToWebp, isFfmpegAvailable } from '../src/token-simulation/ffmpeg';
 import { framesToGif } from '../src/token-simulation/gif';
 import { exportScenarioTemplate, parseScenario } from '../src/token-simulation/scenario';
 import { renderScenarioFrames } from '../src/token-simulation/simulate';
@@ -9,6 +9,7 @@ import { renderScenarioToApng, renderScenarioToGif } from '../src/token-simulati
 
 const sampleXml = readFileSync(join(__dirname, 'fixtures/sample.bpmn'), 'utf-8');
 const gatewayXml = readFileSync(join(__dirname, 'fixtures/gateway.bpmn'), 'utf-8');
+const multilineLabelXml = readFileSync(join(__dirname, 'fixtures/multiline-label.bpmn'), 'utf-8');
 
 /** Extract all `<g class="bts-token" transform="translate(x, y)">` positions from an SVG frame. */
 function tokenPositions(svg: string): { x: number; y: number }[] {
@@ -78,6 +79,19 @@ describe('exportScenarioTemplate', () => {
     const scenario = parseScenario(template);
     expect(scenario.token?.length).toBeGreaterThan(0);
     expect(scenario.token?.[0].step.length).toBeGreaterThan(1);
+  });
+
+  test('collapses multi-line element labels so the generated TOML still parses', async () => {
+    const template = await exportScenarioTemplate(multilineLabelXml);
+    // None of the comment labels should have left a stray, un-prefixed line.
+    for (const line of template.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed === '') continue;
+      expect(trimmed.startsWith('#') || /^(fps|name|element|at_ms|take|\[)/.test(trimmed)).toBe(
+        true
+      );
+    }
+    expect(() => parseScenario(template)).not.toThrow();
   });
 });
 
@@ -198,6 +212,34 @@ name = "rejected"
       )
     ).rejects.toThrow(/start-event/);
   });
+
+  test("omitting the scenario renders the diagram's own default scenario", async () => {
+    const { frames } = await renderScenarioFrames(gatewayXml, undefined, { tailMs: 3000 });
+    expect(frames.length).toBeGreaterThan(5);
+
+    // Default scenario takes the first outgoing flow (Flow_approve, the
+    // "Yes"/upper branch) — the token should never be seen on the lower
+    // ("No") branch past the gateway.
+    const positionsAfterGateway = frames
+      .flatMap((f) => tokenPositions(f.svg))
+      .filter((p) => p.x > 460);
+    expect(positionsAfterGateway.length).toBeGreaterThan(0);
+    for (const pos of positionsAfterGateway) {
+      expect(pos.y).toBeLessThan(200);
+    }
+  });
+
+  test('reports simulate progress via onProgress', async () => {
+    const ticks: number[] = [];
+    const { frames } = await renderScenarioFrames(sampleXml, oneTokenScenario, {
+      tailMs: 500,
+      onProgress: (p) => {
+        expect(p.phase).toBe('simulate');
+        ticks.push(p.current);
+      },
+    });
+    expect(ticks).toEqual(Array.from({ length: frames.length }, (_, i) => i + 1));
+  });
 });
 
 describe('framesToGif', () => {
@@ -209,6 +251,49 @@ describe('framesToGif', () => {
     const gif = framesToGif(frames, frameDurationMs);
     expect(Buffer.isBuffer(gif)).toBe(true);
     expect(gif.subarray(0, 3).toString('ascii')).toBe('GIF');
+  });
+
+  test('reports rasterize progress via onProgress', async () => {
+    const { frames, frameDurationMs } = await renderScenarioFrames(sampleXml, oneTokenScenario, {
+      tailMs: 500,
+    });
+    const ticks: number[] = [];
+    framesToGif(frames, frameDurationMs, { onProgress: (p) => ticks.push(p.current) });
+    expect(ticks).toEqual(Array.from({ length: frames.length }, (_, i) => i + 1));
+  });
+});
+
+describe('ffmpeg mp4/webp encoders', () => {
+  test.skipIf(!isFfmpegAvailable())(
+    'framesToMp4 produces an MP4 when ffmpeg is available',
+    async () => {
+      const { frames, frameDurationMs } = await renderScenarioFrames(sampleXml, oneTokenScenario, {
+        tailMs: 500,
+      });
+      const mp4 = framesToMp4(frames, frameDurationMs);
+      // ISO base media file format: 'ftyp' box at byte offset 4.
+      expect(mp4.subarray(4, 8).toString('ascii')).toBe('ftyp');
+    }
+  );
+
+  test.skipIf(!isFfmpegAvailable())(
+    'framesToWebp produces a WebP when ffmpeg is available',
+    async () => {
+      const { frames, frameDurationMs } = await renderScenarioFrames(sampleXml, oneTokenScenario, {
+        tailMs: 500,
+      });
+      const webp = framesToWebp(frames, frameDurationMs);
+      expect(webp.subarray(0, 4).toString('ascii')).toBe('RIFF');
+      expect(webp.subarray(8, 12).toString('ascii')).toBe('WEBP');
+    }
+  );
+
+  test('framesToMp4 without ffmpeg throws a clear error', async () => {
+    if (isFfmpegAvailable()) return; // covered by the success test above instead
+    const { frames, frameDurationMs } = await renderScenarioFrames(sampleXml, oneTokenScenario, {
+      tailMs: 500,
+    });
+    expect(() => framesToMp4(frames, frameDurationMs)).toThrow(/ffmpeg/);
   });
 });
 

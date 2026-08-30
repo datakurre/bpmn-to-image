@@ -22,12 +22,14 @@ bpmn-to-image [options] [input] [output]
 
 - `input` — path to a `.bpmn`/`.xml` file. Omit or pass `-` to read from stdin.
 - `output` — path to write the rendered image to. Omit or pass `-` to write to stdout.
-- `-f, --format <svg|png|gif|apng>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout. `apng` requires ffmpeg.
-- `-s, --scale <number>` — pixel density multiplier (PNG/GIF/APNG). Default: `2`.
-- `--scenario <file>` — render an animated token-simulation GIF/APNG, driven by this TOML scenario file (see [Animated executions](#animated-executions)).
+- `-f, --format <svg|png|gif|apng|mp4|webp>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout. `apng`/`mp4`/`webp` require ffmpeg.
+- `-s, --scale <number>` — pixel density multiplier (PNG or an animated format). Default: `2`.
+- `--scenario <file>` — steer the animation with this TOML scenario file (see [Animated executions](#animated-executions)). Omit it and animated formats render the diagram's own default scenario instead.
 - `--fps <number>` — animation frame rate, overriding the scenario's own `fps` (default: `12`). Higher values trade smoother token motion for proportionally more frames to render.
-- `--encoder <auto|gifenc|ffmpeg>` — GIF encoder. `auto` (default) prefers ffmpeg (better palette quality) when it's on `PATH`, falling back to the bundled pure-JS `gifenc` otherwise.
+- `--encoder <auto|gifenc|ffmpeg>` — GIF-only encoder choice. `auto` (default) prefers ffmpeg (better palette quality, smaller files) when it's on `PATH`, falling back to the bundled pure-JS `gifenc` otherwise.
 - `--export-scenario` — write a scenario TOML scaffold for the input diagram instead of rendering an image.
+
+Rendering an animated format prints a live progress bar to stderr (when it's a TTY — never mixed into piped/redirected output).
 
 ```bash
 bpmn-to-image diagram.bpmn diagram.svg
@@ -78,31 +80,40 @@ name = "request-received-1"
 
 Add a second `[[token]]` block (with its own `[[token.step]]` entries) for a concurrent token — e.g. staggering `at_ms` and steering it down `Flow_reject` instead, to render both outcomes racing through the same diagram at once.
 
-Then render the animation:
+Then render the animation — `--scenario` is optional; without it, an animated format renders the diagram's own default scenario (same as `--export-scenario` would generate: one token per start event, first outgoing flow at every gateway):
 
 ```bash
+bpmn-to-image diagram.bpmn diagram.gif                          # default scenario
 bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
-bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.apng   # requires ffmpeg
+bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.apng  # requires ffmpeg
+bpmn-to-image diagram.bpmn diagram.mp4                           # requires ffmpeg
+bpmn-to-image diagram.bpmn diagram.webp                          # requires ffmpeg
 ```
 
 Or from the library:
 
 ```ts
-import { exportScenarioTemplate, renderScenarioToGif } from 'bpmn-to-image';
+import { renderScenarioToGif } from 'bpmn-to-image';
 
-const scenarioToml = await exportScenarioTemplate(xml); // or hand-written
-const gif = await renderScenarioToGif(xml, scenarioToml);
+const gif = await renderScenarioToGif(xml); // default scenario
+// or: await renderScenarioToGif(xml, await exportScenarioTemplate(xml)); // or hand-written TOML
 ```
 
-`renderScenarioFrames` (SVG frames + timing, no encoding) is also exported for custom pipelines.
+`renderScenarioFrames` (SVG frames + timing, no encoding) is also exported for custom pipelines, along with an `onProgress` option (`{ phase: 'simulate' | 'rasterize', current, total }`) accepted by every render function — the CLI uses it to draw its terminal progress bar.
 
-Token motion is real interpolated animation (not a jump per gateway/event), sampled at a fixed frame rate — the scenario's `fps` field, or the `fps` option/`--fps` flag, which overrides it. Raising it renders more, smoother frames at proportionally higher cost; the default (`12`) is a reasonable balance for GIF output.
+Token motion is real interpolated animation (not a jump per gateway/event), sampled at a fixed frame rate — the scenario's `fps` field, or the `fps` option/`--fps` flag, which overrides it. Raising it renders more, smoother frames at proportionally higher cost; the default (`12`) is a reasonable balance for GIF output. ffmpeg has no role in this — each frame already comes from the real simulated position, so there's nothing to interpolate between; ffmpeg's motion-interpolation filters are for guessing motion in footage that lacks it; they'd only degrade flat vector art here.
 
-### GIF quality and APNG output
+### Output formats and file size
 
-GIF encoding uses the bundled pure-JS [`gifenc`](https://github.com/mattdesl/gifenc) by default (`framesToGif`) — no external tools required, works anywhere `npm install` does. When [`ffmpeg`](https://ffmpeg.org/) is available on `PATH`, `renderScenarioToGif` automatically switches to it instead (`framesToGifWithFfmpeg`), for better color quality via two-pass palette generation; force one or the other with the `encoder` option / `--encoder` flag. `renderScenarioToApng` (`framesToApng`) produces a true 24-bit-color, real-alpha APNG — something `gifenc`'s 256-color GIF palette can't do — and requires ffmpeg (it throws a clear error otherwise). Check availability with `isFfmpegAvailable()`.
+GIF encoding uses the bundled pure-JS [`gifenc`](https://github.com/mattdesl/gifenc) by default (`framesToGif`) — no external tools required, works anywhere `npm install` does. When [`ffmpeg`](https://ffmpeg.org/) is available on `PATH`, `renderScenarioToGif` automatically switches to it instead (`framesToGifWithFfmpeg`), building its palette from _changed_ pixels across frames (`palettegen=stats_mode=diff`) and disabling dithering (`paletteuse=dither=none`) — both a size and a quality win for a mostly-static diagram with one small moving token, since dithering noise compresses far worse than flat color runs. Force one encoder or the other with the `encoder` option / `--encoder` flag.
 
-This repo's Nix flake provisions ffmpeg for both the devShell and the packaged CLI (`nix run`/`nix build` wrap the binary with it on `PATH`), so Nix users get the better encoder and APNG support automatically; plain `npm install` users can install ffmpeg themselves the same way, or stick with the always-available GIF fallback.
+Three formats need ffmpeg outright (`gifenc` can't produce them) and throw a clear error without it:
+
+- `renderScenarioToApng` (`framesToApng`) — true 24-bit color and real alpha, unlike GIF's 256-color palette.
+- `renderScenarioToMp4` (`framesToMp4`) — H.264 video, far smaller than GIF/APNG for the same animation; the tradeoff is it won't auto-play as universally as a GIF does when embedded.
+- `renderScenarioToWebp` (`framesToWebp`) — animated WebP, smaller than GIF at comparable quality.
+
+Check ffmpeg availability with `isFfmpegAvailable()`. This repo's Nix flake provisions ffmpeg for both the devShell and the packaged CLI (`nix run`/`nix build` wrap the binary with it on `PATH`), so Nix users get all of the above automatically; plain `npm install` users can install ffmpeg themselves the same way, or stick with the always-available GIF fallback.
 
 ## Fonts
 
