@@ -39,6 +39,7 @@ interface CliOptions {
   scenario?: string;
   exportScenario: boolean;
   fps?: number;
+  smooth: boolean;
   encoder?: GifEncoder;
 }
 
@@ -69,9 +70,14 @@ Options:
                            diagram's own default scenario instead (one
                            token per start event, first outgoing flow at
                            every gateway).
-      --fps <number>      Animation frame rate, overriding the scenario's
-                           own "fps" (default: 12). Higher = smoother motion
-                           at proportionally more render cost.
+      --fps <number>      Animation frame rate, overriding both --smooth
+                           and the scenario's own "fps" (default: 12).
+                           Higher = smoother motion at proportionally more
+                           render cost.
+      --smooth            Render at a smoother preset frame rate (30fps)
+                           instead of the fast default — for the final
+                           render once you're happy with a scenario, after
+                           iterating on it at the cheaper default.
       --encoder <auto|gifenc|ffmpeg>
                            GIF-only encoder choice. "auto" (default) prefers
                            ffmpeg (better palette quality, smaller files)
@@ -92,6 +98,7 @@ Examples:
   bpmn-to-image --export-scenario diagram.bpmn diagram.toml
   bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
   bpmn-to-image --scenario diagram.toml --fps 24 diagram.bpmn diagram.gif
+  bpmn-to-image --scenario diagram.toml --smooth diagram.bpmn diagram-final.gif
   bpmn-to-image diagram.bpmn diagram.apng
   bpmn-to-image diagram.bpmn diagram.mp4
   bpmn-to-image diagram.bpmn diagram.webp
@@ -115,6 +122,7 @@ function parseArgs(argv: string[]): CliOptions | null {
   let scenario: string | undefined;
   let exportScenario = false;
   let fps: number | undefined;
+  let smooth = false;
   let encoder: GifEncoder | undefined;
 
   for (let i = 0; i < argv.length; i++) {
@@ -162,6 +170,9 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '--export-scenario':
         exportScenario = true;
         break;
+      case '--smooth':
+        smooth = true;
+        break;
       case '--encoder': {
         const value = argv[++i];
         if (value !== 'auto' && value !== 'gifenc' && value !== 'ffmpeg') {
@@ -184,7 +195,7 @@ function parseArgs(argv: string[]): CliOptions | null {
     format = (output !== '-' ? formatFromPath(output) : undefined) ?? (scenario ? 'gif' : 'svg');
   }
 
-  return { input, output, format, scale, scenario, exportScenario, fps, encoder };
+  return { input, output, format, scale, scenario, exportScenario, fps, smooth, encoder };
 }
 
 function readStdin(): Promise<string> {
@@ -226,7 +237,12 @@ async function main(): Promise<void> {
     // scenario (see exportScenarioTemplate) — no --scenario file required.
     const scenarioToml = options.scenario ? fs.readFileSync(options.scenario, 'utf-8') : undefined;
     const onProgress = createTerminalProgressReporter();
-    const animOptions = { scale: options.scale, fps: options.fps, onProgress };
+    const animOptions = {
+      scale: options.scale,
+      fps: options.fps,
+      smooth: options.smooth,
+      onProgress,
+    };
 
     switch (options.format) {
       case 'apng':

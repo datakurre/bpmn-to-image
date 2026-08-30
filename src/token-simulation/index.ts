@@ -13,6 +13,8 @@ export {
 } from './scenario';
 export {
   renderScenarioFrames,
+  DEFAULT_FPS,
+  SMOOTH_FPS,
   type AnimationFrame,
   type RenderScenarioOptions,
   type RenderScenarioResult,

@@ -25,7 +25,8 @@ bpmn-to-image [options] [input] [output]
 - `-f, --format <svg|png|gif|apng|mp4|webp>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout. `apng`/`mp4`/`webp` require ffmpeg.
 - `-s, --scale <number>` — pixel density multiplier (PNG or an animated format). Default: `2`.
 - `--scenario <file>` — steer the animation with this TOML scenario file (see [Animated executions](#animated-executions)). Omit it and animated formats render the diagram's own default scenario instead.
-- `--fps <number>` — animation frame rate, overriding the scenario's own `fps` (default: `12`). Higher values trade smoother token motion for proportionally more frames to render.
+- `--fps <number>` — animation frame rate, overriding both `--smooth` and the scenario's own `fps` (default: `12`). Higher values trade smoother token motion for proportionally more frames to render.
+- `--smooth` — render at a smoother preset frame rate (30fps) instead of the fast default — for the final render once you're happy with a scenario, after iterating on it at the cheaper default.
 - `--encoder <auto|gifenc|ffmpeg>` — GIF-only encoder choice. `auto` (default) prefers ffmpeg (better palette quality, smaller files) when it's on `PATH`, falling back to the bundled pure-JS `gifenc` otherwise.
 - `--export-scenario` — write a scenario TOML scaffold for the input diagram instead of rendering an image.
 
@@ -85,6 +86,7 @@ Then render the animation — `--scenario` is optional; without it, an animated 
 ```bash
 bpmn-to-image diagram.bpmn diagram.gif                          # default scenario
 bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
+bpmn-to-image --scenario diagram.toml --smooth diagram.bpmn diagram-final.gif
 bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.apng  # requires ffmpeg
 bpmn-to-image diagram.bpmn diagram.mp4                           # requires ffmpeg
 bpmn-to-image diagram.bpmn diagram.webp                          # requires ffmpeg
@@ -101,7 +103,7 @@ const gif = await renderScenarioToGif(xml); // default scenario
 
 `renderScenarioFrames` (SVG frames + timing, no encoding) is also exported for custom pipelines, along with an `onProgress` option (`{ phase: 'simulate' | 'rasterize', current, total }`) accepted by every render function — the CLI uses it to draw its terminal progress bar.
 
-Token motion is real interpolated animation (not a jump per gateway/event), sampled at a fixed frame rate — the scenario's `fps` field, or the `fps` option/`--fps` flag, which overrides it. Raising it renders more, smoother frames at proportionally higher cost; the default (`12`) is a reasonable balance for GIF output. ffmpeg has no role in this — each frame already comes from the real simulated position, so there's nothing to interpolate between; ffmpeg's motion-interpolation filters are for guessing motion in footage that lacks it; they'd only degrade flat vector art here.
+Token motion is real interpolated animation (not a jump per gateway/event), sampled at a fixed frame rate — the scenario's `fps` field, `smooth`/`--smooth`, or `fps`/`--fps` itself (each overriding the last in that order). Raising it renders more, smoother frames at proportionally higher cost; the default (`12`, `DEFAULT_FPS`) is fast enough for iterating on a scenario. Once you're happy with it, `smooth: true` / `--smooth` re-renders at a smoother preset (`30`, `SMOOTH_FPS`) for the version you'll actually share — `fps`/`--fps` still wins if you want a specific number instead. ffmpeg has no role in getting there — each frame already comes from the real simulated position, so there's nothing to interpolate between; ffmpeg's motion-interpolation filters are for guessing motion in footage that lacks it, and would only degrade flat vector art here.
 
 ### Output formats and file size
 

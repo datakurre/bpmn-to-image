@@ -18,6 +18,8 @@ export {
   exportScenarioTemplate,
   parseScenario,
   renderScenarioFrames,
+  DEFAULT_FPS,
+  SMOOTH_FPS,
   renderScenarioToGif,
   renderScenarioToApng,
   renderScenarioToMp4,

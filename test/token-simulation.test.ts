@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { framesToMp4, framesToWebp, isFfmpegAvailable } from '../src/token-simulation/ffmpeg';
 import { framesToGif } from '../src/token-simulation/gif';
 import { exportScenarioTemplate, parseScenario } from '../src/token-simulation/scenario';
-import { renderScenarioFrames } from '../src/token-simulation/simulate';
+import { DEFAULT_FPS, SMOOTH_FPS, renderScenarioFrames } from '../src/token-simulation/simulate';
 import { renderScenarioToApng, renderScenarioToGif } from '../src/token-simulation';
 
 const sampleXml = readFileSync(join(__dirname, 'fixtures/sample.bpmn'), 'utf-8');
@@ -193,6 +193,31 @@ name = "rejected"
     });
     expect(atOverriddenFps.frameDurationMs).toBeCloseTo(1000 / 24, 5);
     expect(atOverriddenFps.frames.length).toBeGreaterThan(atScenarioFps.frames.length);
+  });
+
+  test("`smooth` renders at SMOOTH_FPS, overriding the scenario's own `fps`", async () => {
+    const scenarioToml = `fps = 6\n${oneTokenScenario}`;
+    const { frameDurationMs } = await renderScenarioFrames(sampleXml, scenarioToml, {
+      tailMs: 500,
+      smooth: true,
+    });
+    expect(frameDurationMs).toBeCloseTo(1000 / SMOOTH_FPS, 5);
+  });
+
+  test('an explicit `fps` wins over `smooth`', async () => {
+    const { frameDurationMs } = await renderScenarioFrames(sampleXml, oneTokenScenario, {
+      tailMs: 500,
+      smooth: true,
+      fps: 15,
+    });
+    expect(frameDurationMs).toBeCloseTo(1000 / 15, 5);
+  });
+
+  test('with neither `fps` nor `smooth` set, defaults to DEFAULT_FPS', async () => {
+    const { frameDurationMs } = await renderScenarioFrames(sampleXml, oneTokenScenario, {
+      tailMs: 500,
+    });
+    expect(frameDurationMs).toBeCloseTo(1000 / DEFAULT_FPS, 5);
   });
 
   test('rejects a scenario referencing an unknown element id', async () => {
