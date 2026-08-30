@@ -22,8 +22,10 @@ bpmn-to-image [options] [input] [output]
 
 - `input` — path to a `.bpmn`/`.xml` file. Omit or pass `-` to read from stdin.
 - `output` — path to write the rendered image to. Omit or pass `-` to write to stdout.
-- `-f, --format <svg|png>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout.
-- `-s, --scale <number>` — PNG pixel density multiplier. Default: `2`.
+- `-f, --format <svg|png|gif>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout.
+- `-s, --scale <number>` — pixel density multiplier (PNG/GIF). Default: `2`.
+- `--scenario <file>` — render an animated token-simulation GIF, driven by this TOML scenario file (see [Animated executions](#animated-executions)).
+- `--export-scenario` — write a scenario TOML scaffold for the input diagram instead of rendering an image.
 
 ```bash
 bpmn-to-image diagram.bpmn diagram.svg
@@ -44,6 +46,46 @@ const png = await renderToPng(xml, { scale: 2 });
 ```
 
 Both functions accept an optional `moddleExtensions` map (merged with the built-in [Camunda 7 / Operaton](https://docs.camunda.org/manual/7.24/) moddle extension) for diagrams that use other BPMN extension namespaces.
+
+## Animated executions
+
+`bpmn-to-image` can also render an animated GIF of a diagram "running", by driving [bpmn-js-token-simulation](https://github.com/bpmn-io/bpmn-js-token-simulation) headlessly instead of just exporting a static frame. By itself, token simulation only knows how to auto-advance through tasks — a gateway with more than one outgoing flow, or a catch/boundary event, needs an explicit decision (a mouse click, in the interactive tool). A **scenario** is the headless equivalent of that click stream: a small TOML file listing which flow each gateway takes and when each event fires.
+
+Generate a scenario scaffold for a diagram — it walks the diagram and lists every gateway and start/intermediate-catch/boundary event it finds, so you edit real element ids rather than starting from a blank file:
+
+```bash
+bpmn-to-image --export-scenario diagram.bpmn diagram.toml
+```
+
+```toml
+fps = 12
+
+[[trigger]]
+element = "StartEvent_1" # Request received
+at_ms = 0
+
+[[trigger]]
+element = "Gateway_1" # Approved?
+at_ms = 500
+take = "Flow_approve"  # options: Flow_approve, Flow_reject
+```
+
+Then render the animation:
+
+```bash
+bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
+```
+
+Or from the library:
+
+```ts
+import { exportScenarioTemplate, renderScenarioToGif } from 'bpmn-to-image';
+
+const scenarioToml = await exportScenarioTemplate(xml); // or hand-written
+const gif = await renderScenarioToGif(xml, scenarioToml);
+```
+
+A `[[trigger]]` either fires an event (`element` = a start/intermediate-catch/boundary event id, fired as soon as `at_ms` has elapsed and the diagram is actually waiting on it) or steers a gateway (`element` = the gateway id, `take` = the outgoing sequence flow id — or an array of ids, for an inclusive gateway fork). Gateways with no matching trigger default to their first outgoing flow, same as the interactive tool. `renderScenarioFrames` (SVG frames + timing, no GIF encoding) and `framesToGif` are also exported individually for custom pipelines.
 
 ## Fonts
 

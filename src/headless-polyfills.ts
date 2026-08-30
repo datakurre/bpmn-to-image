@@ -15,6 +15,11 @@
 
 import { polyfillGetBBox, polyfillGetComputedTextLength } from './headless-bbox';
 import { applyCanvasPolyfills } from './headless-canvas-2d';
+import {
+  getPointAtLengthOnPolyline,
+  getPolylineLength,
+  parseSvgPolylinePoints,
+} from './headless-path';
 
 // ── SVGTransform polyfill ──────────────────────────────────────────────────
 
@@ -225,20 +230,22 @@ function applyGlobalPolyfills(win: any): void {
 
 /**
  * Polyfill SVG path API methods used by CroppingConnectionDocking,
- * DetachEventBehavior, and ManhattanLayout.
+ * DetachEventBehavior, ManhattanLayout, and (headless) token-simulation
+ * animation.
  *
  * D1-2 / D5-2 / D6-2: These methods are called on <path> elements in
- * bpmn-js internals.  jsdom does not implement them.  The stubs return
- * neutral values that let the callers continue without crashing:
- *   - getTotalLength(): returns 0 (no path length)
- *   - getPointAtLength(): returns the origin point (0,0)
- *   - isPointInStroke(): returns false (point is not in stroke)
+ * bpmn-js internals.  jsdom does not implement them.
  *
- * NOTE: In practice, getCroppedWaypoints(), layoutConnection(), and
- * moveElements([boundaryEvent]) all work correctly headlessly without
- * these stubs (confirmed by D1-1, D5-1, D6-1 spike tests).  These stubs
- * provide a safety net for any additional code paths that may reach
- * these methods.
+ * getTotalLength()/getPointAtLength() compute real polyline geometry when
+ * the path's `d` is pure M/L (exactly what tiny-svg emits for BPMN
+ * connection waypoints, and what bpmn-js-token-simulation's token animation
+ * walks) — this is what makes headless token animation track the actual
+ * connection route rather than sitting at the origin. Paths with curves
+ * (arcs, beziers) fall back to neutral values (0 / origin), since those
+ * aren't produced for connections and callers here don't rely on their
+ * geometry (confirmed by D1-1, D5-1, D6-1 spike tests).
+ *
+ *   - isPointInStroke(): returns false (point is not in stroke)
  */
 function applySvgPathPolyfills(win: any): void {
   const SVGElement = win.SVGElement;
@@ -246,19 +253,21 @@ function applySvgPathPolyfills(win: any): void {
 
   if (!SVGElement.prototype.getTotalLength) {
     SVGElement.prototype.getTotalLength = function (): number {
-      return 0;
+      const points = parseSvgPolylinePoints(this.getAttribute?.('d') || '');
+      return points ? getPolylineLength(points) : 0;
     };
   }
 
   if (!SVGElement.prototype.getPointAtLength) {
-    SVGElement.prototype.getPointAtLength = function (_len: number): DOMPoint {
-      // Return a minimal SVGPoint-like object at the origin
+    SVGElement.prototype.getPointAtLength = function (len: number): DOMPoint {
+      const points = parseSvgPolylinePoints(this.getAttribute?.('d') || '');
+      const { x, y } = points ? getPointAtLengthOnPolyline(points, len) : { x: 0, y: 0 };
       return {
-        x: 0,
-        y: 0,
+        x,
+        y,
         z: 0,
         w: 1,
-        matrixTransform: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+        matrixTransform: () => ({ x, y, z: 0, w: 1 }),
       } as unknown as DOMPoint;
     };
   }

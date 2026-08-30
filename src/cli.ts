@@ -10,14 +10,17 @@
 
 import * as fs from 'node:fs';
 import { renderToPng, renderToSvg } from './render';
+import { exportScenarioTemplate, renderScenarioToGif } from './token-simulation';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version: PKG_VERSION } = require('../package.json') as { version: string };
 
 interface CliOptions {
   input: string;
   output: string;
-  format?: 'svg' | 'png';
+  format?: 'svg' | 'png' | 'gif';
   scale: number;
+  scenario?: string;
+  exportScenario: boolean;
 }
 
 function printUsage(): void {
@@ -35,10 +38,15 @@ Arguments:
                           "-" to write to stdout.
 
 Options:
-  -f, --format <svg|png>  Output format. Inferred from the output file
+  -f, --format <svg|png|gif>  Output format. Inferred from the output file
                            extension when omitted; defaults to "svg" when
                            writing to stdout.
-  -s, --scale <number>    PNG pixel density multiplier. Default: 2.
+  -s, --scale <number>    Pixel density multiplier (PNG/GIF). Default: 2.
+      --scenario <file>   Render an animated token-simulation GIF, driven by
+                           this TOML scenario file (see --export-scenario).
+      --export-scenario   Write a scenario TOML scaffold for the input
+                           diagram (covering its gateways/events) instead of
+                           rendering an image.
   -h, --help               Show this help message and exit.
       --version             Print the version and exit.
 
@@ -46,19 +54,24 @@ Examples:
   bpmn-to-image diagram.bpmn diagram.svg
   bpmn-to-image diagram.bpmn diagram.png
   cat diagram.bpmn | bpmn-to-image --format png > diagram.png
+  bpmn-to-image --export-scenario diagram.bpmn diagram.toml
+  bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
 `);
 }
 
-function formatFromPath(filePath: string): 'svg' | 'png' | undefined {
+function formatFromPath(filePath: string): 'svg' | 'png' | 'gif' | undefined {
   if (filePath.endsWith('.png')) return 'png';
   if (filePath.endsWith('.svg')) return 'svg';
+  if (filePath.endsWith('.gif')) return 'gif';
   return undefined;
 }
 
 function parseArgs(argv: string[]): CliOptions | null {
   const positional: string[] = [];
-  let format: 'svg' | 'png' | undefined;
+  let format: 'svg' | 'png' | 'gif' | undefined;
   let scale = 2;
+  let scenario: string | undefined;
+  let exportScenario = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -73,9 +86,9 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '-f':
       case '--format': {
         const value = argv[++i];
-        if (value !== 'svg' && value !== 'png') {
+        if (value !== 'svg' && value !== 'png' && value !== 'gif') {
           throw new Error(
-            `Invalid --format value: ${value ?? '(missing)'}. Expected "svg" or "png".`
+            `Invalid --format value: ${value ?? '(missing)'}. Expected "svg", "png", or "gif".`
           );
         }
         format = value;
@@ -90,6 +103,12 @@ function parseArgs(argv: string[]): CliOptions | null {
         scale = value;
         break;
       }
+      case '--scenario':
+        scenario = argv[++i];
+        break;
+      case '--export-scenario':
+        exportScenario = true;
+        break;
       default:
         positional.push(arg);
     }
@@ -99,10 +118,10 @@ function parseArgs(argv: string[]): CliOptions | null {
   const output = positional[1] && positional[1] !== '-' ? positional[1] : '-';
 
   if (!format) {
-    format = (output !== '-' ? formatFromPath(output) : undefined) ?? 'svg';
+    format = (output !== '-' ? formatFromPath(output) : undefined) ?? (scenario ? 'gif' : 'svg');
   }
 
-  return { input, output, format, scale };
+  return { input, output, format, scale, scenario, exportScenario };
 }
 
 function readStdin(): Promise<string> {
@@ -128,10 +147,27 @@ async function main(): Promise<void> {
 
   const xml = options.input === '-' ? await readStdin() : fs.readFileSync(options.input, 'utf-8');
 
-  const rendered =
-    options.format === 'png'
-      ? await renderToPng(xml, { scale: options.scale })
-      : Buffer.from(await renderToSvg(xml), 'utf-8');
+  if (options.exportScenario) {
+    const template = await exportScenarioTemplate(xml);
+    if (options.output === '-') {
+      process.stdout.write(template);
+    } else {
+      fs.writeFileSync(options.output, template);
+    }
+    return;
+  }
+
+  let rendered: Buffer;
+  if (options.scenario) {
+    const scenarioToml = fs.readFileSync(options.scenario, 'utf-8');
+    rendered = await renderScenarioToGif(xml, scenarioToml, { scale: options.scale });
+  } else if (options.format === 'png') {
+    rendered = await renderToPng(xml, { scale: options.scale });
+  } else if (options.format === 'gif') {
+    throw new Error('--format gif requires --scenario <file>');
+  } else {
+    rendered = Buffer.from(await renderToSvg(xml), 'utf-8');
+  }
 
   if (options.output === '-') {
     process.stdout.write(rendered);

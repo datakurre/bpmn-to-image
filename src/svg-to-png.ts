@@ -115,7 +115,7 @@ export function getBundledFontDir(): string | null {
 /** Lazily collected system font file paths (collected once on first use). */
 let _cachedFontFiles: string[] | null = null;
 
-function getSystemFontFiles(): string[] {
+export function getSystemFontFiles(): string[] {
   if (_cachedFontFiles !== null) return _cachedFontFiles;
   const files: string[] = [];
   for (const dir of SYSTEM_FONT_DIRS) {

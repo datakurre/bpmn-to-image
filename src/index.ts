@@ -8,3 +8,16 @@
 export { renderToSvg, renderToPng, type RenderOptions, type RenderToPngOptions } from './render';
 export { svgToPng, svgToPngWithFallback, cropSvgToViewBox, tightenSvgViewBox } from './svg-to-png';
 export { createModelerFromXml, type CreateModelerOptions } from './modeler';
+export {
+  exportScenarioTemplate,
+  parseScenario,
+  renderScenarioFrames,
+  renderScenarioToGif,
+  framesToGif,
+  type Scenario,
+  type ScenarioTrigger,
+  type AnimationFrame,
+  type RenderScenarioOptions,
+  type RenderScenarioResult,
+  type FramesToGifOptions,
+} from './token-simulation';

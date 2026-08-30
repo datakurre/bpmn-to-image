@@ -45,8 +45,11 @@
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "bpmn-js": "^18.26.0",
+    "bpmn-js-token-simulation": "^0.40.0",
     "camunda-bpmn-moddle": "^7.0.2",
-    "jsdom": "^30.0.1"
+    "gifenc": "^1.0.3",
+    "jsdom": "^30.0.1",
+    "smol-toml": "^1.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
