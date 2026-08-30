@@ -214,6 +214,82 @@ const PATH_COMMANDS: Record<string, CmdProcessor> = {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
+// ── Polyline point extraction ──────────────────────────────────────────────
+
+/**
+ * Parse a "polyline" path `d` attribute (M/L commands only — no curves) into
+ * its list of points. bpmn-js/tiny-svg render connection waypoints as exactly
+ * this shape (`M x y L x y L x y ...`), so this covers every path the token
+ * simulation animation needs to walk.
+ *
+ * Returns `null` if the path contains any command other than M/L/Z, since
+ * length/point-at-length can't be approximated correctly for curves.
+ */
+export function parseSvgPolylinePoints(d: string): { x: number; y: number }[] | null {
+  if (!d) return null;
+
+  const tokens = d.match(/[a-zA-Z]|-?\d+\.?\d*(?:e[+-]?\d+)?/g);
+  if (!tokens) return null;
+
+  const points: { x: number; y: number }[] = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    const cmd = tokens[i++];
+    if (cmd === 'M' || cmd === 'L') {
+      if (!hasNum(tokens, i) || !hasNum(tokens, i + 1)) return null;
+      points.push({ x: Number(tokens[i]), y: Number(tokens[i + 1]) });
+      i += 2;
+    } else if (cmd === 'Z' || cmd === 'z') {
+      // no-op: closes back to the first point, irrelevant for connections
+    } else {
+      // any other command (curves, relative moves, ...) — not a polyline
+      return null;
+    }
+  }
+
+  return points.length > 0 ? points : null;
+}
+
+/** Total length of a polyline described by `points`. */
+export function getPolylineLength(points: { x: number; y: number }[]): number {
+  let length = 0;
+  for (let i = 1; i < points.length; i++) {
+    length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  return length;
+}
+
+/**
+ * Point at `len` px along a polyline, matching SVG `getPointAtLength`
+ * semantics (clamped to the path's start/end for out-of-range lengths).
+ */
+export function getPointAtLengthOnPolyline(
+  points: { x: number; y: number }[],
+  len: number
+): { x: number; y: number } {
+  if (points.length === 1) return { x: points[0].x, y: points[0].y };
+
+  if (len <= 0) return { x: points[0].x, y: points[0].y };
+
+  let travelled = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const segmentLength = Math.hypot(b.x - a.x, b.y - a.y);
+
+    if (travelled + segmentLength >= len) {
+      const t = segmentLength === 0 ? 0 : (len - travelled) / segmentLength;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+
+    travelled += segmentLength;
+  }
+
+  const last = points[points.length - 1];
+  return { x: last.x, y: last.y };
+}
+
 /**
  * Parse an SVG path `d` attribute and compute its bounding box.
  * Handles M, L, H, V, C, S, Q, T, A, Z commands (absolute and relative).

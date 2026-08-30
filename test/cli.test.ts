@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, test } from 'vitest';
 
 const cliPath = join(__dirname, '../dist/cli.js');
 const fixturePath = join(__dirname, 'fixtures/sample.bpmn');
+const gatewayFixturePath = join(__dirname, 'fixtures/gateway.bpmn');
 
 let workDir: string;
 
@@ -51,5 +52,27 @@ describe('bpmn-to-image CLI', () => {
     expect(output.subarray(0, 8)).toEqual(
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     );
+  });
+
+  test('--export-scenario writes a TOML scaffold covering the diagram gateway', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const outPath = join(workDir, 'scenario.toml');
+    execFileSync('node', [cliPath, '--export-scenario', gatewayFixturePath, outPath]);
+    const toml = readFileSync(outPath, 'utf-8');
+    expect(toml).toContain('element = "Gateway_1"');
+    expect(toml).toContain('take =');
+  });
+
+  test('--scenario renders an animated GIF', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const scenarioPath = join(workDir, 'scenario.toml');
+    const outPath = join(workDir, 'out.gif');
+    writeFileSync(
+      scenarioPath,
+      '[[token]]\nname = "t1"\n\n  [[token.step]]\n  element = "StartEvent_1"\n'
+    );
+    execFileSync('node', [cliPath, '--scenario', scenarioPath, gatewayFixturePath, outPath]);
+    const gif = readFileSync(outPath);
+    expect(gif.subarray(0, 3).toString('ascii')).toBe('GIF');
   });
 });

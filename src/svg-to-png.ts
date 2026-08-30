@@ -10,7 +10,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Resvg } from '@resvg/resvg-js';
+import { Resvg, type RenderedImage } from '@resvg/resvg-js';
 
 /**
  * Platform-specific system font directories.
@@ -115,7 +115,7 @@ export function getBundledFontDir(): string | null {
 /** Lazily collected system font file paths (collected once on first use). */
 let _cachedFontFiles: string[] | null = null;
 
-function getSystemFontFiles(): string[] {
+export function getSystemFontFiles(): string[] {
   if (_cachedFontFiles !== null) return _cachedFontFiles;
   const files: string[] = [];
   for (const dir of SYSTEM_FONT_DIRS) {
@@ -250,16 +250,16 @@ export function tightenSvgViewBox(
 }
 
 /**
- * Convert an SVG string to a PNG buffer.
- *
- * Applies bounding-box cropping (strips the blank origin offset from
- * bpmn-js SVG output) and renders at 2× scale for crisp hi-DPI output.
+ * Rasterize an SVG string with @resvg/resvg-js, applying the same viewBox
+ * cropping and bundled-font fallback as `svgToPng`. Returns the rendered
+ * image (`.pixels` for raw RGBA, `.asPng()`/`.width`/`.height` otherwise) —
+ * the shared entry point for both static PNG output and the animated
+ * GIF/APNG encoders, which need raw per-frame RGBA rather than a decoded PNG.
  *
  * @param svg   The SVG markup (e.g. from `modeler.saveSVG()`)
  * @param scale Pixel density multiplier (default: 2 for 2× / hi-DPI)
- * @returns     A Buffer containing the PNG image data
  */
-export function svgToPng(svg: string, scale = 2): Buffer {
+export function rasterizeSvg(svg: string, scale = 2): RenderedImage {
   const cropped = cropSvgToViewBox(svg);
   const fontFiles = getSystemFontFiles();
   const resvg = new Resvg(cropped, {
@@ -276,8 +276,21 @@ export function svgToPng(svg: string, scale = 2): Buffer {
       defaultFontFamily: 'Liberation Sans',
     },
   });
-  const rendered = resvg.render();
-  return Buffer.from(rendered.asPng());
+  return resvg.render();
+}
+
+/**
+ * Convert an SVG string to a PNG buffer.
+ *
+ * Applies bounding-box cropping (strips the blank origin offset from
+ * bpmn-js SVG output) and renders at 2× scale for crisp hi-DPI output.
+ *
+ * @param svg   The SVG markup (e.g. from `modeler.saveSVG()`)
+ * @param scale Pixel density multiplier (default: 2 for 2× / hi-DPI)
+ * @returns     A Buffer containing the PNG image data
+ */
+export function svgToPng(svg: string, scale = 2): Buffer {
+  return Buffer.from(rasterizeSvg(svg, scale).asPng());
 }
 
 /**
