@@ -5,7 +5,10 @@
 import { createModelerFromXml, type CreateModelerOptions } from './modeler';
 import { svgToPng, tightenSvgViewBox } from './svg-to-png';
 
-export type RenderOptions = CreateModelerOptions;
+export interface RenderOptions extends CreateModelerOptions {
+  /** Background color (CSS color string, e.g. "white", "#FFFFFF"). Default: undefined (transparent). */
+  background?: string;
+}
 
 export interface RenderToPngOptions extends RenderOptions {
   /** Pixel density multiplier passed to the SVG→PNG rasterizer. Default: 2. */
@@ -23,7 +26,7 @@ export async function renderToSvg(xml: string, options: RenderOptions = {}): Pro
   const modeler = await createModelerFromXml(xml, options);
   const { svg } = await modeler.saveSVG();
   const elementRegistry = modeler.get('elementRegistry');
-  return tightenSvgViewBox(svg || '', elementRegistry.getAll());
+  return tightenSvgViewBox(svg || '', elementRegistry.getAll(), undefined, options.background);
 }
 
 /**
@@ -33,5 +36,5 @@ export async function renderToSvg(xml: string, options: RenderOptions = {}): Pro
  */
 export async function renderToPng(xml: string, options: RenderToPngOptions = {}): Promise<Buffer> {
   const svg = await renderToSvg(xml, options);
-  return svgToPng(svg, options.scale);
+  return svgToPng(svg, { scale: options.scale, background: options.background });
 }

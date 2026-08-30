@@ -5,11 +5,16 @@ import { framesToMp4, framesToWebp, isFfmpegAvailable } from '../src/token-simul
 import { framesToGif } from '../src/token-simulation/gif';
 import { exportScenarioTemplate, parseScenario } from '../src/token-simulation/scenario';
 import { DEFAULT_FPS, SMOOTH_FPS, renderScenarioFrames } from '../src/token-simulation/simulate';
-import { renderScenarioToApng, renderScenarioToGif } from '../src/token-simulation';
+import {
+  renderScenarioToApng,
+  renderScenarioToGif,
+  renderScenarioToMp4,
+} from '../src/token-simulation';
 
 const sampleXml = readFileSync(join(__dirname, 'fixtures/sample.bpmn'), 'utf-8');
 const gatewayXml = readFileSync(join(__dirname, 'fixtures/gateway.bpmn'), 'utf-8');
 const multilineLabelXml = readFileSync(join(__dirname, 'fixtures/multiline-label.bpmn'), 'utf-8');
+const exampleXml = readFileSync(join(__dirname, '../example.bpmn'), 'utf-8');
 
 /** Extract all `<g class="bts-token" transform="translate(x, y)">` positions from an SVG frame. */
 function tokenPositions(svg: string): { x: number; y: number }[] {
@@ -107,11 +112,30 @@ describe('renderScenarioFrames', () => {
       expect(frame.svg).toContain('<svg');
     }
 
-    const firstToken = tokenPositions(frames[2].svg)[0];
-    const lastToken = tokenPositions(frames[frames.length - 3].svg)[0];
+    const tokenFrames = frames.filter((f) => tokenPositions(f.svg).length > 0);
+    expect(tokenFrames.length).toBeGreaterThan(5);
+    const firstToken = tokenPositions(tokenFrames[1].svg)[0];
+    const lastToken = tokenPositions(tokenFrames[tokenFrames.length - 1].svg)[0];
     expect(firstToken).toBeDefined();
     expect(lastToken).toBeDefined();
     expect(Math.abs(lastToken.x - firstToken.x)).toBeGreaterThan(20);
+  });
+
+  test('animates parallel gateways (fork and join) through to the end event', async () => {
+    const { frames } = await renderScenarioFrames(exampleXml);
+    expect(frames.length).toBeGreaterThan(50);
+
+    // Verify parallel fork: at some point there are 2 concurrent tokens
+    const maxConcurrentTokens = Math.max(...frames.map((f) => tokenPositions(f.svg).length));
+    expect(maxConcurrentTokens).toBe(2);
+
+    // Verify waiting token at merging parallel gateway (stop/wait state)
+    const framesWithWaitingTokens = frames.filter((f) => /<g class="bts-token-count"/.test(f.svg));
+    expect(framesWithWaitingTokens.length).toBeGreaterThan(0);
+
+    // Verify reaching the end event past the join gateway (x > 750)
+    const endPositions = frames.flatMap((f) => tokenPositions(f.svg)).filter((p) => p.x > 750);
+    expect(endPositions.length).toBeGreaterThan(0);
   });
 
   test('a gateway `take` step steers the token onto the configured branch', async () => {
@@ -322,9 +346,17 @@ describe('ffmpeg mp4/webp encoders', () => {
   });
 });
 
-describe('renderScenarioToGif / renderScenarioToApng', () => {
+describe('renderScenarioToGif / renderScenarioToApng / renderScenarioToMp4', () => {
   test('renderScenarioToGif produces a GIF regardless of encoder availability', async () => {
     const gif = await renderScenarioToGif(sampleXml, oneTokenScenario, { tailMs: 500 });
+    expect(gif.subarray(0, 3).toString('ascii')).toBe('GIF');
+  });
+
+  test('renderScenarioToGif respects the background option', async () => {
+    const gif = await renderScenarioToGif(sampleXml, oneTokenScenario, {
+      tailMs: 500,
+      background: 'white',
+    });
     expect(gif.subarray(0, 3).toString('ascii')).toBe('GIF');
   });
 
@@ -333,6 +365,14 @@ describe('renderScenarioToGif / renderScenarioToApng', () => {
     async () => {
       const apng = await renderScenarioToApng(sampleXml, oneTokenScenario, { tailMs: 500 });
       expect(apng.subarray(1, 4).toString('ascii')).toBe('PNG');
+    }
+  );
+
+  test.skipIf(!isFfmpegAvailable())(
+    'renderScenarioToMp4 produces an MP4 with default background',
+    async () => {
+      const mp4 = await renderScenarioToMp4(sampleXml, oneTokenScenario, { tailMs: 500 });
+      expect(mp4.subarray(4, 8).toString('ascii')).toBe('ftyp');
     }
   );
 

@@ -24,6 +24,7 @@ bpmn-to-image [options] [input] [output]
 - `output` — path to write the rendered image to. Omit or pass `-` to write to stdout.
 - `-f, --format <svg|png|gif|apng|mp4|webp>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout. `apng`/`mp4`/`webp` require ffmpeg.
 - `-s, --scale <number>` — pixel density multiplier (PNG or an animated format). Default: `2`.
+- `-b, --background <color>` — background color (CSS string, e.g. `white`, `#FFFFFF`, `#fafafa`). Default: transparent for SVG/PNG/GIF/APNG/WebP, and `white` for MP4 (which does not support transparency).
 - `--scenario <file>` — steer the animation with this TOML scenario file (see [Animated executions](#animated-executions)). Omit it and animated formats render the diagram's own default scenario instead.
 - `--fps <number>` — animation frame rate, overriding both `--smooth` and the scenario's own `fps` (default: `12`). Higher values trade smoother token motion for proportionally more frames to render.
 - `--smooth` — render at a smoother preset frame rate (30fps) instead of the fast default — for the final render once you're happy with a scenario, after iterating on it at the cheaper default.
@@ -35,6 +36,7 @@ Rendering an animated format prints a live progress bar to stderr (when it's a T
 ```bash
 bpmn-to-image diagram.bpmn diagram.svg
 bpmn-to-image diagram.bpmn diagram.png
+bpmn-to-image --background white diagram.bpmn diagram.png
 cat diagram.bpmn | bpmn-to-image --format png > diagram.png
 ```
 
@@ -47,10 +49,10 @@ import { readFileSync } from 'node:fs';
 const xml = readFileSync('diagram.bpmn', 'utf-8');
 
 const svg = await renderToSvg(xml);
-const png = await renderToPng(xml, { scale: 2 });
+const png = await renderToPng(xml, { scale: 2, background: 'white' });
 ```
 
-Both functions accept an optional `moddleExtensions` map (merged with the built-in [Camunda 7 / Operaton](https://docs.camunda.org/manual/7.24/) moddle extension) for diagrams that use other BPMN extension namespaces.
+Both functions accept an optional `background` color and `moddleExtensions` map (merged with the built-in [Camunda 7 / Operaton](https://docs.camunda.org/manual/7.24/) moddle extension) for diagrams that use other BPMN extension namespaces.
 
 ## Animated executions
 

@@ -15,6 +15,8 @@ import type { AnimationFrame } from './simulate';
 export interface FramesToGifOptions {
   /** Pixel density multiplier passed to the SVG rasterizer. Default: 1. */
   scale?: number;
+  /** Background color (CSS color string, e.g. "white", "#FFFFFF"). Default: undefined (transparent). */
+  background?: string;
   /** Max colors in the shared GIF palette (2-256). Default: 128. */
   maxColors?: number;
   /** GIF loop count: 0 = forever (default), -1 = play once. */
@@ -39,11 +41,12 @@ export function framesToGif(
   }
 
   const scale = options.scale ?? 1;
+  const background = options.background;
   const maxColors = options.maxColors ?? 128;
   const repeat = options.repeat ?? 0;
 
   const rasterized = frames.map(({ svg }, i) => {
-    const rendered = rasterizeSvg(svg, scale);
+    const rendered = rasterizeSvg(svg, { scale, background });
     options.onProgress?.({ phase: 'rasterize', current: i + 1, total: frames.length });
     return { data: rendered.pixels, width: rendered.width, height: rendered.height };
   });

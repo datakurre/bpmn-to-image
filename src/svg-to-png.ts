@@ -146,18 +146,28 @@ export function getSystemFontFiles(): string[] {
  *
  * Fix: set the SVG `width` / `height` attributes to match the viewBox
  * dimensions so the renderer clips exactly to the diagram bounding box.
+ * If `background` is given, inserts a background rect matching the viewBox.
  */
-export function cropSvgToViewBox(svg: string): string {
+export function cropSvgToViewBox(svg: string, background?: string): string {
   const viewBoxMatch = svg.match(/viewBox="([^"]+)"/);
   if (!viewBoxMatch) return svg;
   const parts = viewBoxMatch[1].trim().split(/[\s,]+/);
   if (parts.length !== 4) return svg;
-  const [, , w, h] = parts.map(Number);
+  const [x, y, w, h] = parts.map(Number);
   if (!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) return svg;
-  // Replace width and height on the opening <svg> element
-  return svg
+
+  let updatedSvg = svg
     .replace(/(<svg[^>]*)\bwidth="[^"]*"/, `$1width="${w}"`)
     .replace(/(<svg[^>]*)\bheight="[^"]*"/, `$1height="${h}"`);
+
+  if (background && !svg.includes('class="bpmn-to-image-background"')) {
+    const bgX = isFinite(x) ? x : 0;
+    const bgY = isFinite(y) ? y : 0;
+    const bgRect = `<rect class="bpmn-to-image-background" x="${bgX}" y="${bgY}" width="${w}" height="${h}" fill="${background}"/>`;
+    updatedSvg = updatedSvg.replace(/(<svg[^>]*>)/, `$1${bgRect}`);
+  }
+
+  return updatedSvg;
 }
 
 /** Padding (px) around diagram content in tightened SVG viewBox. */
@@ -223,31 +233,49 @@ export function computeElementBounds(
  * @param svg         SVG markup from `modeler.saveSVG()`
  * @param allElements All elements from `elementRegistry.getAll()` (optional)
  * @param padding     Padding in px around content bounds. Default: 10
+ * @param background  Optional background color (CSS string, e.g. "white", "#FFFFFF")
  */
 export function tightenSvgViewBox(
   svg: string,
   allElements?: any[],
-  padding = TIGHTEN_PADDING
+  padding = TIGHTEN_PADDING,
+  background?: string
 ): string {
-  if (!allElements || allElements.length === 0) return cropSvgToViewBox(svg);
+  if (!allElements || allElements.length === 0) return cropSvgToViewBox(svg, background);
 
   try {
     const bounds = computeElementBounds(allElements);
-    if (!bounds) return cropSvgToViewBox(svg);
+    if (!bounds) return cropSvgToViewBox(svg, background);
 
     const vbX = Math.round(bounds.minX - padding);
     const vbY = Math.round(bounds.minY - padding);
     const vbW = Math.round(bounds.maxX - bounds.minX + 2 * padding);
     const vbH = Math.round(bounds.maxY - bounds.minY + 2 * padding);
 
-    return svg
+    let updatedSvg = svg
       .replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${vbY} ${vbW} ${vbH}"`)
       .replace(/(<svg[^>]*)\bwidth="[^"]*"/, `$1width="${vbW}"`)
       .replace(/(<svg[^>]*)\bheight="[^"]*"/, `$1height="${vbH}"`);
+
+    if (background && !svg.includes('class="bpmn-to-image-background"')) {
+      const bgRect = `<rect class="bpmn-to-image-background" x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="${background}"/>`;
+      updatedSvg = updatedSvg.replace(/(<svg[^>]*>)/, `$1${bgRect}`);
+    }
+
+    return updatedSvg;
   } catch {
-    return cropSvgToViewBox(svg);
+    return cropSvgToViewBox(svg, background);
   }
 }
+
+export interface RasterizeOptions {
+  /** Pixel density multiplier (default: 2 for 2× / hi-DPI). */
+  scale?: number;
+  /** Background color (CSS color string, e.g. "white", "#FFFFFF"). Default: undefined (transparent). */
+  background?: string;
+}
+
+export type SvgToPngOptions = RasterizeOptions;
 
 /**
  * Rasterize an SVG string with @resvg/resvg-js, applying the same viewBox
@@ -256,14 +284,23 @@ export function tightenSvgViewBox(
  * the shared entry point for both static PNG output and the animated
  * GIF/APNG encoders, which need raw per-frame RGBA rather than a decoded PNG.
  *
- * @param svg   The SVG markup (e.g. from `modeler.saveSVG()`)
- * @param scale Pixel density multiplier (default: 2 for 2× / hi-DPI)
+ * @param svg            The SVG markup (e.g. from `modeler.saveSVG()`)
+ * @param scaleOrOptions Pixel density multiplier or RasterizeOptions object (default: 2)
+ * @param background     Optional background color string
  */
-export function rasterizeSvg(svg: string, scale = 2): RenderedImage {
-  const cropped = cropSvgToViewBox(svg);
+export function rasterizeSvg(
+  svg: string,
+  scaleOrOptions: number | RasterizeOptions = 2,
+  background?: string
+): RenderedImage {
+  const scale = typeof scaleOrOptions === 'number' ? scaleOrOptions : (scaleOrOptions.scale ?? 2);
+  const bg =
+    typeof scaleOrOptions === 'object' ? (scaleOrOptions.background ?? background) : background;
+  const cropped = cropSvgToViewBox(svg, bg);
   const fontFiles = getSystemFontFiles();
   const resvg = new Resvg(cropped, {
     fitTo: { mode: 'zoom' as const, value: scale },
+    background: bg ?? undefined,
     font: {
       fontFiles,
       // Disable the built-in system font scanner so we control exactly
@@ -285,12 +322,17 @@ export function rasterizeSvg(svg: string, scale = 2): RenderedImage {
  * Applies bounding-box cropping (strips the blank origin offset from
  * bpmn-js SVG output) and renders at 2× scale for crisp hi-DPI output.
  *
- * @param svg   The SVG markup (e.g. from `modeler.saveSVG()`)
- * @param scale Pixel density multiplier (default: 2 for 2× / hi-DPI)
- * @returns     A Buffer containing the PNG image data
+ * @param svg            The SVG markup (e.g. from `modeler.saveSVG()`)
+ * @param scaleOrOptions Pixel density multiplier or SvgToPngOptions object (default: 2)
+ * @param background     Optional background color string
+ * @returns              A Buffer containing the PNG image data
  */
-export function svgToPng(svg: string, scale = 2): Buffer {
-  return Buffer.from(rasterizeSvg(svg, scale).asPng());
+export function svgToPng(
+  svg: string,
+  scaleOrOptions: number | SvgToPngOptions = 2,
+  background?: string
+): Buffer {
+  return Buffer.from(rasterizeSvg(svg, scaleOrOptions, background).asPng());
 }
 
 /**
@@ -302,18 +344,26 @@ export function svgToPng(svg: string, scale = 2): Buffer {
  * base64-encodable buffer with `mimeType: "image/svg+xml"` so the caller
  * still gets a useful diagram preview.
  *
- * @param svg  The SVG markup
- * @returns    `{ data: Buffer; mimeType: string }` — PNG or SVG fallback
+ * @param svg            The SVG markup
+ * @param scaleOrOptions Pixel density multiplier or SvgToPngOptions object (default: 2)
+ * @param background     Optional background color string
+ * @returns              `{ data: Buffer; mimeType: string }` — PNG or SVG fallback
  */
-export function svgToPngWithFallback(svg: string): { data: Buffer; mimeType: string } {
+export function svgToPngWithFallback(
+  svg: string,
+  scaleOrOptions: number | SvgToPngOptions = 2,
+  background?: string
+): { data: Buffer; mimeType: string } {
   const fontFiles = getSystemFontFiles();
+  const bg =
+    typeof scaleOrOptions === 'object' ? (scaleOrOptions.background ?? background) : background;
 
   if (fontFiles.length === 0) {
     // No fonts available — fall back to SVG to avoid blank labels.
     // Still crop the viewBox offset so the fallback SVG has no dead space.
-    return { data: Buffer.from(cropSvgToViewBox(svg), 'utf-8'), mimeType: 'image/svg+xml' };
+    return { data: Buffer.from(cropSvgToViewBox(svg, bg), 'utf-8'), mimeType: 'image/svg+xml' };
   }
 
-  const pngBuffer = svgToPng(svg);
+  const pngBuffer = svgToPng(svg, scaleOrOptions, background);
   return { data: pngBuffer, mimeType: 'image/png' };
 }

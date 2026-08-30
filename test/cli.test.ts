@@ -75,4 +75,19 @@ describe('bpmn-to-image CLI', () => {
     const gif = readFileSync(outPath);
     expect(gif.subarray(0, 3).toString('ascii')).toBe('GIF');
   });
+
+  test('--background adds background color to SVG and PNG output', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const svgPath = join(workDir, 'out.svg');
+    const pngPath = join(workDir, 'out.png');
+    execFileSync('node', [cliPath, '--background', 'white', fixturePath, svgPath]);
+    execFileSync('node', [cliPath, '-b', '#123456', fixturePath, pngPath]);
+    const svg = readFileSync(svgPath, 'utf-8');
+    const png = readFileSync(pngPath);
+    expect(svg).toContain('<rect class="bpmn-to-image-background"');
+    expect(svg).toContain('fill="white"');
+    expect(png.subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    );
+  });
 });

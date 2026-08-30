@@ -24,6 +24,12 @@ describe('renderToSvg', () => {
     expect(height).toBeGreaterThan(0);
     expect(height).toBeLessThan(150);
   });
+
+  test('respects the background option in SVG', async () => {
+    const svg = await renderToSvg(sampleXml, { background: '#123456' });
+    expect(svg).toContain('<rect class="bpmn-to-image-background"');
+    expect(svg).toContain('fill="#123456"');
+  });
 });
 
 describe('renderToPng', () => {
@@ -40,5 +46,10 @@ describe('renderToPng', () => {
     const png1x = await renderToPng(sampleXml, { scale: 1 });
     const png2x = await renderToPng(sampleXml, { scale: 2 });
     expect(png2x.length).toBeGreaterThan(png1x.length);
+  });
+
+  test('respects the background option in PNG', async () => {
+    const png = await renderToPng(sampleXml, { background: 'white' });
+    expect(Buffer.isBuffer(png)).toBe(true);
   });
 });

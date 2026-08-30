@@ -36,6 +36,7 @@ interface CliOptions {
   output: string;
   format?: Format;
   scale: number;
+  background?: string;
   scenario?: string;
   exportScenario: boolean;
   fps?: number;
@@ -65,6 +66,11 @@ Options:
                            ffmpeg.
   -s, --scale <number>    Pixel density multiplier (PNG or an animated
                            format). Default: 2.
+  -b, --background <color>
+                           Background color (CSS color string, e.g. "white",
+                           "#FFFFFF"). Default: transparent for SVG/PNG/GIF/
+                           APNG/WebP, and "white" for MP4 (which does not
+                           support transparency).
       --scenario <file>   Steer the animation with this TOML scenario file
                            (see --export-scenario). Omit to render the
                            diagram's own default scenario instead (one
@@ -93,6 +99,7 @@ Options:
 Examples:
   bpmn-to-image diagram.bpmn diagram.svg
   bpmn-to-image diagram.bpmn diagram.png
+  bpmn-to-image --background white diagram.bpmn diagram.png
   cat diagram.bpmn | bpmn-to-image --format png > diagram.png
   bpmn-to-image diagram.bpmn diagram.gif                      # default scenario
   bpmn-to-image --export-scenario diagram.bpmn diagram.toml
@@ -119,6 +126,7 @@ function parseArgs(argv: string[]): CliOptions | null {
   const positional: string[] = [];
   let format: Format | undefined;
   let scale = 2;
+  let background: string | undefined;
   let scenario: string | undefined;
   let exportScenario = false;
   let fps: number | undefined;
@@ -156,6 +164,10 @@ function parseArgs(argv: string[]): CliOptions | null {
         scale = value;
         break;
       }
+      case '-b':
+      case '--background':
+        background = argv[++i];
+        break;
       case '--scenario':
         scenario = argv[++i];
         break;
@@ -195,7 +207,18 @@ function parseArgs(argv: string[]): CliOptions | null {
     format = (output !== '-' ? formatFromPath(output) : undefined) ?? (scenario ? 'gif' : 'svg');
   }
 
-  return { input, output, format, scale, scenario, exportScenario, fps, smooth, encoder };
+  return {
+    input,
+    output,
+    format,
+    scale,
+    background,
+    scenario,
+    exportScenario,
+    fps,
+    smooth,
+    encoder,
+  };
 }
 
 function readStdin(): Promise<string> {
@@ -239,6 +262,7 @@ async function main(): Promise<void> {
     const onProgress = createTerminalProgressReporter();
     const animOptions = {
       scale: options.scale,
+      background: options.background,
       fps: options.fps,
       smooth: options.smooth,
       onProgress,
@@ -261,9 +285,9 @@ async function main(): Promise<void> {
         });
     }
   } else if (options.format === 'png') {
-    rendered = await renderToPng(xml, { scale: options.scale });
+    rendered = await renderToPng(xml, { scale: options.scale, background: options.background });
   } else {
-    rendered = Buffer.from(await renderToSvg(xml), 'utf-8');
+    rendered = Buffer.from(await renderToSvg(xml, { background: options.background }), 'utf-8');
   }
 
   if (options.output === '-') {

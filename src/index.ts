@@ -12,6 +12,8 @@ export {
   cropSvgToViewBox,
   tightenSvgViewBox,
   rasterizeSvg,
+  type RasterizeOptions,
+  type SvgToPngOptions,
 } from './svg-to-png';
 export { createModelerFromXml, type CreateModelerOptions } from './modeler';
 export {

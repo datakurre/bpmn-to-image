@@ -47,6 +47,8 @@ export const SMOOTH_FPS = 30;
 export interface RenderScenarioOptions {
   /** Additional/overriding moddle extensions, merged with the Camunda defaults. */
   moddleExtensions?: Record<string, unknown>;
+  /** Background color (CSS color string, e.g. "white", "#FFFFFF"). Default: undefined (transparent). */
+  background?: string;
   /**
    * Rendered animation frame rate, overriding both `smooth` and the
    * scenario's own `fps`. Higher values trade smoother token motion for
@@ -62,7 +64,7 @@ export interface RenderScenarioOptions {
    * the scenario itself).
    */
   smooth?: boolean;
-  /** Extra ms of animation to keep rendering after the last scheduled event step. Default: 2000. */
+  /** Extra ms of animation to keep rendering after the last scheduled event step. Default: 1000. */
   tailMs?: number;
   /** Hard cap on total simulated time, guarding against scenarios that never settle. Default: 30000. */
   maxDurationMs?: number;
@@ -184,6 +186,13 @@ class TokenTracker {
     return true;
   }
 
+  /** Whether any token still has an unconsumed event step scheduled in the future (`at_ms > atMs`). */
+  hasFutureEventSteps(atMs: number): boolean {
+    return this.tokens.some((t) =>
+      t.steps.some((s) => !s.consumed && s.step.take === undefined && (s.step.at_ms ?? 0) > atMs)
+    );
+  }
+
   unconsumedSteps(): { tokenName: string; element: string }[] {
     return this.tokens.flatMap((t) =>
       t.steps
@@ -228,6 +237,81 @@ function validateScenario(
 }
 
 /**
+ * Render any active TokenCount overlays (tokens stopped/waiting at gateways,
+ * catch events, or tasks) as SVG elements with jumping bounce animation,
+ * matching bpmn-js-token-simulation's interactive overlay appearance.
+ */
+function renderTokenCountsSvg(overlays: any, t: number): string {
+  const tokenCountOverlays = overlays?.get?.({ type: 'bts-token-count' }) ?? [];
+  if (!Array.isArray(tokenCountOverlays) || tokenCountOverlays.length === 0) return '';
+
+  // Sine bounce jumping animation matching CSS @keyframes bts-jump { 50% { top: 5px; } }
+  const jumpOffset = Math.sin(Math.PI * ((t % 1000) / 1000)) * 5;
+  const groups: string[] = [];
+
+  for (const overlay of tokenCountOverlays) {
+    const element = overlay.element;
+    if (!element) continue;
+
+    let x = element.x ?? 0;
+    let y = element.y ?? 0;
+    let width = element.width ?? 0;
+    let height = element.height ?? 0;
+
+    if (element.waypoints && Array.isArray(element.waypoints) && element.waypoints.length > 0) {
+      const xs = element.waypoints.map((p: any) => p.x);
+      const ys = element.waypoints.map((p: any) => p.y);
+      x = Math.min(...xs);
+      y = Math.min(...ys);
+      width = Math.max(...xs) - x;
+      height = Math.max(...ys) - y;
+    }
+
+    const pos = overlay.position ?? {};
+    let left = pos.left ?? 0;
+    let top = pos.top ?? 0;
+
+    if (pos.right !== undefined) {
+      left = pos.right * -1 + width;
+    }
+    if (pos.bottom !== undefined) {
+      top = pos.bottom * -1 + height;
+    }
+
+    const baseX = x + left;
+    const baseY = y + top;
+
+    const html = overlay.html;
+    const tokenCountNodes = html?.querySelectorAll ? html.querySelectorAll('.bts-token-count') : [];
+
+    if (!tokenCountNodes || tokenCountNodes.length === 0) continue;
+
+    for (let i = 0; i < tokenCountNodes.length; i++) {
+      const node = tokenCountNodes[i];
+      if (node.classList?.contains('inactive')) continue;
+
+      const count = node.textContent?.trim() || '1';
+      const bg = node.style?.backgroundColor || node.style?.background || '#10D070';
+      const color = node.style?.color || '#FFFFFF';
+
+      const offsetX = i * 17;
+      const finalX = baseX + offsetX;
+      const finalY = baseY + jumpOffset;
+
+      groups.push(
+        `<g class="bts-token-count" transform="translate(${finalX}, ${finalY})">` +
+          `<circle class="bts-circle" r="12.5" cx="12.5" cy="12.5" fill="${bg}" />` +
+          `<text class="bts-text" transform="translate(12.5, 17)" text-anchor="middle" fill="${color}" font-size="13" font-family="Arial, sans-serif" font-weight="bold">${count}</text>` +
+          `</g>`
+      );
+    }
+  }
+
+  if (groups.length === 0) return '';
+  return `<g class="bts-token-counts">${groups.join('')}</g>`;
+}
+
+/**
  * Render a BPMN diagram's token-simulation animation, driven by a
  * scenario's named tokens, into a sequence of SVG frames at a fixed
  * virtual frame rate.
@@ -246,7 +330,7 @@ export async function renderScenarioFrames(
   const tokens = namedTokens(scenario);
   const fps = options.fps ?? (options.smooth ? SMOOTH_FPS : (scenario.fps ?? DEFAULT_FPS));
   const frameDurationMs = 1000 / fps;
-  const tailMs = options.tailMs ?? 2000;
+  const tailMs = options.tailMs ?? 1000;
   const maxDurationMs = options.maxDurationMs ?? 30000;
 
   const container = createTokenSimulationCanvas();
@@ -269,6 +353,8 @@ export async function renderScenarioFrames(
   const elementRegistry = modeler.get('elementRegistry');
   const eventBus = modeler.get('eventBus');
   const simulator = modeler.get('simulator');
+  const animation = modeler.get('animation');
+  const overlays = modeler.get('overlays');
 
   validateScenario(elementRegistry, tokens);
 
@@ -292,22 +378,50 @@ export async function renderScenarioFrames(
         Math.max(max, ...t.step.filter((s) => s.take === undefined).map((s) => s.at_ms ?? 0)),
       0
     );
-    const stopAt = Math.min(lastEventStepAt + tailMs, maxDurationMs);
+    const estimatedTotalFrames = Math.max(
+      Math.floor((lastEventStepAt + tailMs) / frameDurationMs) + 1,
+      1
+    );
 
     const tokenNames = tracker.tokenNames();
     const frames: AnimationFrame[] = [];
-    const totalFrames = Math.floor(stopAt / frameDurationMs) + 1;
+    let idleSinceMs: number | null = null;
+    let t = 0;
 
-    for (let t = 0; t <= stopAt; t += frameDurationMs) {
+    while (t <= maxDurationMs) {
       for (const tokenName of tokenNames) {
         tracker.applyDueEventStep(tokenName, t, simulator, elementRegistry);
       }
 
-      clock.advance(frameDurationMs);
+      let { svg } = await modeler.saveSVG();
+      const tokenCountsSvg = renderTokenCountsSvg(overlays, t);
+      if (tokenCountsSvg && svg) {
+        svg = svg.replace('</svg>', `${tokenCountsSvg}</svg>`);
+      }
+      frames.push({
+        atMs: t,
+        svg: tightenSvgViewBox(svg || '', elementRegistry.getAll(), undefined, options.background),
+      });
+      const progressTotal = Math.max(estimatedTotalFrames, frames.length);
+      options.onProgress?.({ phase: 'simulate', current: frames.length, total: progressTotal });
 
-      const { svg } = await modeler.saveSVG();
-      frames.push({ atMs: t, svg: tightenSvgViewBox(svg || '', elementRegistry.getAll()) });
-      options.onProgress?.({ phase: 'simulate', current: frames.length, total: totalFrames });
+      const active =
+        Boolean(animation && animation._animations && animation._animations.size > 0) ||
+        tracker.hasFutureEventSteps(t);
+
+      if (active) {
+        idleSinceMs = null;
+      } else {
+        if (idleSinceMs === null) {
+          idleSinceMs = t;
+        }
+        if (t - idleSinceMs >= tailMs) {
+          break;
+        }
+      }
+
+      clock.advance(frameDurationMs);
+      t += frameDurationMs;
     }
 
     const unconsumed = tracker.unconsumedSteps();

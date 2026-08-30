@@ -37,6 +37,8 @@ export function isFfmpegAvailable(force = false): boolean {
 export interface FfmpegEncodeOptions {
   /** Pixel density multiplier passed to the SVG rasterizer. Default: 1. */
   scale?: number;
+  /** Background color (CSS color string, e.g. "white", "#FFFFFF"). Default: "white" for MP4 (formats without transparency support), undefined (transparent) for others. */
+  background?: string;
   /** Called once per frame while rasterizing SVG frames to pixels, ahead of the ffmpeg encode itself. */
   onProgress?: OnProgress;
 }
@@ -46,11 +48,12 @@ type FfmpegFormat = 'gif' | 'apng' | 'mp4' | 'webp';
 function rasterizeFramesToDir(
   frames: AnimationFrame[],
   scale: number,
+  background: string | undefined,
   dir: string,
   onProgress?: OnProgress
 ): void {
   for (const [i, frame] of frames.entries()) {
-    const png = rasterizeSvg(frame.svg, scale).asPng();
+    const png = rasterizeSvg(frame.svg, { scale, background }).asPng();
     writeFileSync(join(dir, `frame_${String(i).padStart(5, '0')}.png`), png);
     onProgress?.({ phase: 'rasterize', current: i + 1, total: frames.length });
   }
@@ -103,19 +106,7 @@ function formatArgs(format: FfmpegFormat): string[] {
         '+faststart',
       ];
     case 'webp':
-      return [
-        '-loop',
-        '0',
-        '-lossless',
-        '0',
-        '-q:v',
-        '80',
-        '-compression_level',
-        '6',
-        '-an',
-        '-vsync',
-        '0',
-      ];
+      return ['-loop', '0', '-lossless', '0', '-q:v', '80', '-compression_level', '6', '-an'];
   }
 }
 
@@ -137,11 +128,12 @@ function runFfmpeg(
   }
 
   const scale = options.scale ?? 1;
+  const background = options.background ?? (format === 'mp4' ? 'white' : undefined);
   const fps = 1000 / frameDurationMs;
   const dir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
 
   try {
-    rasterizeFramesToDir(frames, scale, dir, options.onProgress);
+    rasterizeFramesToDir(frames, scale, background, dir, options.onProgress);
     const outPath = join(dir, `out.${format}`);
 
     const args = [
