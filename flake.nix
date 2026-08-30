@@ -8,40 +8,25 @@
 
   outputs =
     { self, nixpkgs, flake-utils }:
+    let
+      overlay = final: prev: {
+        bpmn-to-image = final.callPackage ./nix/package.nix { };
+      };
+    in
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
-
-        packageJson = builtins.fromJSON (builtins.readFile ./package.json);
-
-        bpmn-to-image = pkgs.buildNpmPackage {
-          pname = packageJson.name;
-          version = packageJson.version;
-
-          src = ./.;
-
-          # Generated from package-lock.json via `nix build`/`prefetch-npm-deps`.
-          # After changing package-lock.json, run `nix build` once: it fails
-          # with a hash mismatch that prints the correct value to paste here.
-          npmDepsHash = "sha256-h5aCxzgU4oaR6mMRx5J65AkX6VwRT7imVmMRcTCDNFk=";
-
-          npmBuildScript = "build";
-
-          meta = {
-            description = "Render BPMN 2.0 XML to SVG or PNG headlessly, using bpmn-js via jsdom";
-            homepage = "https://github.com/datakurre/bpmn-to-image";
-            license = pkgs.lib.licenses.mit;
-            mainProgram = "bpmn-to-image";
-          };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ overlay ];
         };
       in
       {
-        packages.default = bpmn-to-image;
-        packages.bpmn-to-image = bpmn-to-image;
+        packages.default = pkgs.bpmn-to-image;
+        packages.bpmn-to-image = pkgs.bpmn-to-image;
 
         apps.default = flake-utils.lib.mkApp {
-          drv = bpmn-to-image;
+          drv = pkgs.bpmn-to-image;
           name = "bpmn-to-image";
         };
 
@@ -58,7 +43,10 @@
           ];
         };
 
-        checks.default = bpmn-to-image;
+        checks.default = pkgs.bpmn-to-image;
       }
-    );
+    )
+    // {
+      overlays.default = overlay;
+    };
 }

@@ -74,7 +74,26 @@ nix build              # build the package (./result/bin/bpmn-to-image)
 nix run . -- --help    # run directly
 ```
 
-`flake.nix` packages the project with `buildNpmPackage`, pinned via `npmDepsHash` in `flake.nix`. After changing `package-lock.json`, run `nix build` once — it fails with a hash mismatch that prints the correct value to paste back into `flake.nix`.
+`flake.nix` packages the project with `buildNpmPackage` (the derivation lives in `nix/package.nix`, pinned via `npmDepsHash`). After changing `package-lock.json`, run `nix build` once — it fails with a hash mismatch that prints the correct value to paste back into `nix/package.nix`.
+
+The flake also exposes `overlays.default`, adding `bpmn-to-image` to `pkgs` for consumption from another flake:
+
+```nix
+{
+  inputs.bpmn-to-image.url = "github:datakurre/bpmn-to-image";
+
+  outputs = { self, nixpkgs, bpmn-to-image }:
+    let
+      pkgs = import nixpkgs {
+        system = "x86_64-linux";
+        overlays = [ bpmn-to-image.overlays.default ];
+      };
+    in
+    {
+      # pkgs.bpmn-to-image is now available
+    };
+}
+```
 
 ## License
 
