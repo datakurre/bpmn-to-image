@@ -1,0 +1,63 @@
+{
+  "name": "bpmn-to-image",
+  "version": "0.1.0",
+  "description": "Render BPMN 2.0 XML to SVG or PNG headlessly, using bpmn-js via jsdom",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "bpmn-to-image": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
+    "watch": "node esbuild.config.mjs --watch",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint src/ test/",
+    "lint:fix": "eslint src/ test/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "bpmn",
+    "bpmn-js",
+    "svg",
+    "png",
+    "diagram",
+    "headless"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/datakurre/bpmn-to-image.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist/",
+    "fonts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "bpmn-js": "^18.26.0",
+    "camunda-bpmn-moddle": "^7.0.2",
+    "jsdom": "^30.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.2",
+    "eslint-plugin-unicorn": "^63.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.54.0",
+    "vitest": "^4.0.18"
+  }
+}
