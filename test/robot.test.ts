@@ -15,16 +15,16 @@ describe('robot plugin', () => {
     expect(robotModule.textRenderer).toEqual(['type', CustomTextRenderer]);
   });
 
-  test('renderToSvg renders robot icon for service tasks with robot in ID', async () => {
+  test('renderToSvg renders robot icon as native vector path for service tasks with robot in ID', async () => {
     const svg = await renderToSvg(robotXml);
-    expect(svg).toContain('<image');
-    expect(svg).toMatch(/<image[^>]*width="32"[^>]*height="32"/);
-    expect(svg).toContain('data:image/svg+xml');
+    expect(svg).toContain('class="robot-icon"');
+    expect(svg).toContain('<path');
+    expect(svg).not.toContain('<image');
   });
 
   test('renderToSvg does not render robot icon for non-robot tasks', async () => {
     const svg = await renderToSvg(sampleXml);
-    expect(svg).not.toContain('<image');
+    expect(svg).not.toContain('class="robot-icon"');
   });
 
   test('renderToPng renders a diagram with robot task to a valid PNG buffer', async () => {
@@ -36,13 +36,13 @@ describe('robot plugin', () => {
     expect(png.length).toBeGreaterThan(1000);
   });
 
-  test('renderScenarioFrames includes robot icon in animation frames', async () => {
+  test('renderScenarioFrames includes robot icon as vector paths in animation frames', async () => {
     const result = await renderScenarioFrames(robotXml);
     expect(result.frames.length).toBeGreaterThan(0);
     for (const frame of result.frames) {
-      expect(frame.svg).toContain('<image');
-      expect(frame.svg).toMatch(/<image[^>]*width="32"[^>]*height="32"/);
-      expect(frame.svg).toContain('data:image/svg+xml');
+      expect(frame.svg).toContain('class="robot-icon"');
+      expect(frame.svg).toContain('<path');
+      expect(frame.svg).not.toContain('<image');
     }
   });
 });
