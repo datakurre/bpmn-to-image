@@ -46,3 +46,4 @@ export {
   type RenderPhase,
   type RenderProgress,
 } from './token-simulation';
+export { default as robotModule, RobotTaskRenderer, CustomTextRenderer } from './robot';

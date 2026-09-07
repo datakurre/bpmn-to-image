@@ -15,5 +15,6 @@
 
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import TokenSimulationBaseModule from 'bpmn-js-token-simulation/lib/base';
+import RobotModule from '../robot';
 
-(window as any).__TokenSimBpmnJS = { BpmnModeler, TokenSimulationBaseModule };
+(window as any).__TokenSimBpmnJS = { BpmnModeler, TokenSimulationBaseModule, RobotModule };

@@ -8,6 +8,7 @@
 
 import camundaModdle from 'camunda-bpmn-moddle/resources/camunda.json';
 import { createHeadlessCanvas, getBpmnModeler } from './headless-canvas';
+import RobotModule from './robot';
 
 /** Moddle extensions registered on every modeler instance by default. */
 const DEFAULT_MODDLE_EXTENSIONS = { camunda: camundaModdle };
@@ -15,6 +16,8 @@ const DEFAULT_MODDLE_EXTENSIONS = { camunda: camundaModdle };
 export interface CreateModelerOptions {
   /** Additional/overriding moddle extensions, merged with the Camunda defaults. */
   moddleExtensions?: Record<string, unknown>;
+  /** Additional modules to register with BpmnModeler. */
+  additionalModules?: unknown[];
 }
 
 /** Create a BpmnModeler and import the supplied BPMN 2.0 XML into it. */
@@ -25,7 +28,8 @@ export async function createModelerFromXml(
   const container = createHeadlessCanvas();
   const BpmnModeler = getBpmnModeler();
   const moddleExtensions = { ...DEFAULT_MODDLE_EXTENSIONS, ...options.moddleExtensions };
-  const modeler = new BpmnModeler({ container, moddleExtensions });
+  const additionalModules = [RobotModule, ...(options.additionalModules ?? [])];
+  const modeler = new BpmnModeler({ container, additionalModules, moddleExtensions });
 
   const result = await modeler.importXML(xml);
   const warnings: unknown[] = (result && (result as any).warnings) || [];

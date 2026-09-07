@@ -20,6 +20,7 @@ import { applyPolyfills } from '../headless-polyfills';
 let jsdomInstance: any;
 let BpmnModelerCtor: any;
 let TokenSimulationBaseModule: any;
+let RobotModule: any;
 
 function resolveBundlePath(): string {
   // Built alongside dist/index.js by esbuild.config.mjs. When running from
@@ -52,6 +53,7 @@ export function createTokenSimulationCanvas(): HTMLElement {
     const globals = (jsdomInstance.window as any).__TokenSimBpmnJS;
     BpmnModelerCtor = globals.BpmnModeler;
     TokenSimulationBaseModule = globals.TokenSimulationBaseModule;
+    RobotModule = globals.RobotModule;
   }
 
   return jsdomInstance.window.document.getElementById('canvas')!;
@@ -73,4 +75,10 @@ export function getTokenSimulationBpmnModeler(): any {
 export function getTokenSimulationBaseModule(): any {
   if (!TokenSimulationBaseModule) createTokenSimulationCanvas();
   return TokenSimulationBaseModule;
+}
+
+/** Return the lazily-loaded robot module. */
+export function getTokenSimulationRobotModule(): any {
+  if (!RobotModule) createTokenSimulationCanvas();
+  return RobotModule;
 }

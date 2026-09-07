@@ -1,4 +1,24 @@
 import { build, context } from 'esbuild';
+import fs from 'node:fs';
+
+/**
+ * Esbuild plugin to inline .svg assets as base64 data URLs.
+ * Ensures standalone, valid SVG output compatible with XML parsers and resvg.
+ * @type {import('esbuild').Plugin}
+ */
+const svgBase64Plugin = {
+  name: 'svg-base64',
+  setup(build) {
+    build.onLoad({ filter: /\.svg$/ }, async (args) => {
+      const content = await fs.promises.readFile(args.path);
+      const base64 = content.toString('base64');
+      return {
+        contents: `export default "data:image/svg+xml;base64,${base64}";`,
+        loader: 'js',
+      };
+    });
+  },
+};
 
 /** @type {import('esbuild').BuildOptions} */
 const nodeConfig = {
@@ -11,7 +31,7 @@ const nodeConfig = {
   entryNames: '[name]',
   external: [
     'jsdom',
-    'bpmn-js',
+    'bpmn-js/dist/*',
     'bpmn-js-token-simulation',
     'bpmn-moddle',
     'camunda-bpmn-moddle',
@@ -19,6 +39,7 @@ const nodeConfig = {
     'gifenc',
     'smol-toml',
   ],
+  plugins: [svgBase64Plugin],
 };
 
 /**
@@ -35,6 +56,7 @@ const tokenSimulationBrowserConfig = {
   target: 'es2020',
   format: 'iife',
   outfile: 'dist/token-simulation-bundle.js',
+  plugins: [svgBase64Plugin],
 };
 
 const configs = [nodeConfig, tokenSimulationBrowserConfig];

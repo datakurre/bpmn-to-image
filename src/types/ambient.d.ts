@@ -39,3 +39,8 @@ declare module 'gifenc' {
 
   export function GIFEncoder(options?: Record<string, unknown>): GIFEncoderInstance;
 }
+
+declare module '*.svg' {
+  const content: string;
+  export default content;
+}

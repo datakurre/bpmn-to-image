@@ -27,6 +27,7 @@ import {
   createTokenSimulationCanvas,
   getTokenSimulationBaseModule,
   getTokenSimulationBpmnModeler,
+  getTokenSimulationRobotModule,
   getTokenSimulationWindow,
 } from './headless-canvas';
 import type { OnProgress } from './progress';
@@ -47,6 +48,8 @@ export const SMOOTH_FPS = 30;
 export interface RenderScenarioOptions {
   /** Additional/overriding moddle extensions, merged with the Camunda defaults. */
   moddleExtensions?: Record<string, unknown>;
+  /** Additional modules to register with BpmnModeler. */
+  additionalModules?: unknown[];
   /** Background color (CSS color string, e.g. "white", "#FFFFFF"). Default: undefined (transparent). */
   background?: string;
   /**
@@ -336,11 +339,17 @@ export async function renderScenarioFrames(
   const container = createTokenSimulationCanvas();
   const BpmnModeler = getTokenSimulationBpmnModeler();
   const TokenSimulationBaseModule = getTokenSimulationBaseModule();
+  const RobotModule = getTokenSimulationRobotModule();
   const moddleExtensions = { camunda: camundaModdle, ...options.moddleExtensions };
+  const additionalModules = [
+    TokenSimulationBaseModule,
+    RobotModule,
+    ...(options.additionalModules ?? []),
+  ];
 
   const modeler = new BpmnModeler({
     container,
-    additionalModules: [TokenSimulationBaseModule],
+    additionalModules,
     moddleExtensions,
   });
 
