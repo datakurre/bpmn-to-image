@@ -14,6 +14,10 @@ import {
 const sampleXml = readFileSync(join(__dirname, 'fixtures/sample.bpmn'), 'utf-8');
 const gatewayXml = readFileSync(join(__dirname, 'fixtures/gateway.bpmn'), 'utf-8');
 const multilineLabelXml = readFileSync(join(__dirname, 'fixtures/multiline-label.bpmn'), 'utf-8');
+const intermediateTimerXml = readFileSync(
+  join(__dirname, 'fixtures/intermediate-timer.bpmn'),
+  'utf-8'
+);
 const exampleXml = readFileSync(join(__dirname, '../example.bpmn'), 'utf-8');
 
 /** Extract all `<g class="bts-token" transform="translate(x, y)">` positions from an SVG frame. */
@@ -136,6 +140,30 @@ describe('renderScenarioFrames', () => {
     // Verify reaching the end event past the join gateway (x > 750)
     const endPositions = frames.flatMap((f) => tokenPositions(f.svg)).filter((p) => p.x > 750);
     expect(endPositions.length).toBeGreaterThan(0);
+  });
+
+  test('continues after a token waits at an intermediate timer event', async () => {
+    const { frames } = await renderScenarioFrames(
+      intermediateTimerXml,
+      `
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_timer"
+
+  [[token.step]]
+  element = "TimerEvent_1"
+  at_ms = 0
+`,
+      { tailMs: 100 }
+    );
+
+    const afterTimerPositions = frames
+      .flatMap((frame) => tokenPositions(frame.svg))
+      .filter((position) => position.x > 400);
+
+    expect(afterTimerPositions.length).toBeGreaterThan(0);
   });
 
   test('a gateway `take` step steers the token onto the configured branch', async () => {

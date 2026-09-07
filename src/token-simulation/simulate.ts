@@ -189,10 +189,28 @@ class TokenTracker {
     return true;
   }
 
-  /** Whether any token still has an unconsumed event step scheduled in the future (`at_ms > atMs`). */
-  hasFutureEventSteps(atMs: number): boolean {
-    return this.tokens.some((t) =>
-      t.steps.some((s) => !s.consumed && s.step.take === undefined && (s.step.at_ms ?? 0) > atMs)
+  /**
+   * Whether the simulation still has scheduled work, including a token that
+   * is currently waiting on a due event subscription. The latter matters for
+   * intermediate timer/catch events: there may be no animation while the
+   * token is paused at the event, but the scenario still has work to do.
+   */
+  hasPendingEventSteps(atMs: number, simulator: any, elementRegistry: any): boolean {
+    return this.tokens.some((token) =>
+      token.steps.some((entry, index) => {
+        if (entry.consumed || entry.step.take !== undefined) return false;
+        if ((entry.step.at_ms ?? 0) > atMs) return true;
+
+        const element = elementRegistry.get(entry.step.element);
+        if (!element) return false;
+
+        const subscriptions = simulator.findSubscriptions({ element });
+        return index === 0
+          ? subscriptions.length > 0
+          : subscriptions.some(
+              (subscription: any) => this.tokenNameByScope.get(subscription.scope) === token.name
+            );
+      })
     );
   }
 
@@ -416,7 +434,7 @@ export async function renderScenarioFrames(
 
       const active =
         Boolean(animation && animation._animations && animation._animations.size > 0) ||
-        tracker.hasFutureEventSteps(t);
+        tracker.hasPendingEventSteps(t, simulator, elementRegistry);
 
       if (active) {
         idleSinceMs = null;

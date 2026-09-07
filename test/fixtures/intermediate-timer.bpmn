@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   id="Definitions_timer"
+                   targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_timer" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_timer">
+      <bpmn:outgoing>Flow_timer_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_before_timer">
+      <bpmn:incoming>Flow_timer_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_timer_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:intermediateCatchEvent id="TimerEvent_1">
+      <bpmn:incoming>Flow_timer_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_timer_3</bpmn:outgoing>
+      <bpmn:timerEventDefinition />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="Task_after_timer">
+      <bpmn:incoming>Flow_timer_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_timer_4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_timer">
+      <bpmn:incoming>Flow_timer_4</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_timer_1" sourceRef="StartEvent_timer" targetRef="Task_before_timer" />
+    <bpmn:sequenceFlow id="Flow_timer_2" sourceRef="Task_before_timer" targetRef="TimerEvent_1" />
+    <bpmn:sequenceFlow id="Flow_timer_3" sourceRef="TimerEvent_1" targetRef="Task_after_timer" />
+    <bpmn:sequenceFlow id="Flow_timer_4" sourceRef="Task_after_timer" targetRef="EndEvent_timer" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_timer">
+    <bpmndi:BPMNPlane id="BPMNPlane_timer" bpmnElement="Process_timer">
+      <bpmndi:BPMNShape id="StartEvent_timer_di" bpmnElement="StartEvent_timer"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_before_timer_di" bpmnElement="Task_before_timer"><dc:Bounds x="180" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TimerEvent_1_di" bpmnElement="TimerEvent_1"><dc:Bounds x="330" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_after_timer_di" bpmnElement="Task_after_timer"><dc:Bounds x="420" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_timer_di" bpmnElement="EndEvent_timer"><dc:Bounds x="570" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_timer_1_di" bpmnElement="Flow_timer_1"><di:waypoint x="136" y="118" /><di:waypoint x="180" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_timer_2_di" bpmnElement="Flow_timer_2"><di:waypoint x="280" y="118" /><di:waypoint x="330" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_timer_3_di" bpmnElement="Flow_timer_3"><di:waypoint x="366" y="118" /><di:waypoint x="420" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_timer_4_di" bpmnElement="Flow_timer_4"><di:waypoint x="520" y="118" /><di:waypoint x="570" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
