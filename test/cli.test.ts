@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, test } from 'vitest';
@@ -74,6 +74,25 @@ describe('bpmn-to-image CLI', () => {
     execFileSync('node', [cliPath, '--scenario', scenarioPath, gatewayFixturePath, outPath]);
     const gif = readFileSync(outPath);
     expect(gif.subarray(0, 3).toString('ascii')).toBe('GIF');
+  });
+
+  test('--frames exports numbered SVG and PNG frames', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const svgDir = join(workDir, 'svg-frames');
+    const pngDir = join(workDir, 'png-frames');
+    execFileSync('node', [cliPath, '--frames', svgDir, fixturePath]);
+    execFileSync('node', [cliPath, '--frames', pngDir, '--format', 'png', fixturePath]);
+
+    const svgFrames = readdirSync(svgDir).sort();
+    const pngFrames = readdirSync(pngDir).sort();
+    expect(svgFrames.length).toBeGreaterThan(0);
+    expect(svgFrames[0]).toBe('frame-0000.svg');
+    expect(readFileSync(join(svgDir, svgFrames[0]), 'utf-8')).toContain('<svg');
+    expect(pngFrames.length).toBe(svgFrames.length);
+    expect(pngFrames[0]).toBe('frame-0000.png');
+    expect(readFileSync(join(pngDir, pngFrames[0])).subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    );
   });
 
   test('--background adds background color to SVG and PNG output', () => {

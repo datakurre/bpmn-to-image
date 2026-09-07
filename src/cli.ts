@@ -11,8 +11,10 @@
 import * as fs from 'node:fs';
 import { createTerminalProgressReporter } from './progress-bar';
 import { renderToPng, renderToSvg } from './render';
+import { svgToPng } from './svg-to-png';
 import {
   exportScenarioTemplate,
+  renderScenarioFrames,
   renderScenarioToApng,
   renderScenarioToGif,
   renderScenarioToMp4,
@@ -42,6 +44,7 @@ interface CliOptions {
   fps?: number;
   smooth: boolean;
   encoder?: GifEncoder;
+  frames?: string;
 }
 
 function printUsage(): void {
@@ -78,8 +81,10 @@ Options:
                            every gateway).
       --fps <number>      Animation frame rate, overriding both --smooth
                            and the scenario's own "fps" (default: 12).
-                           Higher = smoother motion at proportionally more
-                           render cost.
+                            Higher = smoother motion at proportionally more
+                            render cost.
+      --frames <dir>      Export every token-simulation frame to this directory.
+                          Use --format svg (default) or --format png.
       --smooth            Render at a smoother preset frame rate (30fps)
                            instead of the fast default — for the final
                            render once you're happy with a scenario, after
@@ -106,6 +111,8 @@ Examples:
   bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
   bpmn-to-image --scenario diagram.toml --fps 24 diagram.bpmn diagram.gif
   bpmn-to-image --scenario diagram.toml --smooth diagram.bpmn diagram-final.gif
+  bpmn-to-image --scenario diagram.toml --frames frames diagram.bpmn
+  bpmn-to-image --scenario diagram.toml --frames frames --format png diagram.bpmn
   bpmn-to-image diagram.bpmn diagram.apng
   bpmn-to-image diagram.bpmn diagram.mp4
   bpmn-to-image diagram.bpmn diagram.webp
@@ -132,6 +139,7 @@ function parseArgs(argv: string[]): CliOptions | null {
   let fps: number | undefined;
   let smooth = false;
   let encoder: GifEncoder | undefined;
+  let frames: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -171,6 +179,15 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '--scenario':
         scenario = argv[++i];
         break;
+      case '--frames':
+      case '--export-frames':
+        frames = argv[++i];
+        if (!frames || frames.startsWith('-')) {
+          throw new Error(
+            `Invalid --frames value: ${frames ?? '(missing)'}. Expected a directory.`
+          );
+        }
+        break;
       case '--fps': {
         const value = Number(argv[++i]);
         if (!isFinite(value) || value <= 0) {
@@ -204,7 +221,13 @@ function parseArgs(argv: string[]): CliOptions | null {
   const output = positional[1] && positional[1] !== '-' ? positional[1] : '-';
 
   if (!format) {
-    format = (output !== '-' ? formatFromPath(output) : undefined) ?? (scenario ? 'gif' : 'svg');
+    format =
+      (output !== '-' ? formatFromPath(output) : undefined) ??
+      (frames ? 'svg' : scenario ? 'gif' : 'svg');
+  }
+
+  if (frames && isAnimatedFormat(format)) {
+    throw new Error('--frames only supports --format svg or --format png.');
   }
 
   return {
@@ -218,6 +241,7 @@ function parseArgs(argv: string[]): CliOptions | null {
     fps,
     smooth,
     encoder,
+    frames,
   };
 }
 
@@ -250,6 +274,34 @@ async function main(): Promise<void> {
       process.stdout.write(template);
     } else {
       fs.writeFileSync(options.output, template);
+    }
+    return;
+  }
+
+  if (options.frames) {
+    const scenarioToml = options.scenario ? fs.readFileSync(options.scenario, 'utf-8') : undefined;
+    const progress = createTerminalProgressReporter();
+    const result = await renderScenarioFrames(xml, scenarioToml, {
+      fps: options.fps,
+      smooth: options.smooth,
+      background: options.background,
+      onProgress: progress,
+    });
+    fs.mkdirSync(options.frames, { recursive: true });
+    const width = Math.max(4, String(Math.max(0, result.frames.length - 1)).length);
+
+    for (let i = 0; i < result.frames.length; i++) {
+      const extension = options.format === 'png' ? 'png' : 'svg';
+      const fileName = `frame-${String(i).padStart(width, '0')}.${extension}`;
+      const data =
+        options.format === 'png'
+          ? svgToPng(result.frames[i].svg, {
+              scale: options.scale,
+              background: options.background,
+            })
+          : Buffer.from(result.frames[i].svg, 'utf-8');
+      fs.writeFileSync(`${options.frames}/${fileName}`, data);
+      progress({ phase: 'rasterize', current: i + 1, total: result.frames.length });
     }
     return;
   }
