@@ -12,6 +12,7 @@ export {
   cropSvgToViewBox,
   tightenSvgViewBox,
   rasterizeSvg,
+  fixMarkerUrls,
   type RasterizeOptions,
   type SvgToPngOptions,
 } from './svg-to-png';

@@ -134,6 +134,18 @@ export function getSystemFontFiles(): string[] {
 }
 
 /**
+ * Strip quotes from fragment URL references in SVG (e.g. `url('#marker-id')` -> `url(#marker-id)`).
+ *
+ * bpmn-js generates marker references with single quotes in inline CSS styles
+ * (e.g. `style="marker-end: url('#marker-123');"`). While standard browsers
+ * support quoted IRIs, Rust-based SVG parsers like usvg (used by @resvg/resvg-js)
+ * fail to parse quoted URLs inside marker-end and silently drop the arrowheads.
+ */
+export function fixMarkerUrls(svg: string): string {
+  return svg.replace(/url\(\s*["']?#([^"')\s]+)["']?\s*\)/g, 'url(#$1)');
+}
+
+/**
  * Remove the dead space at the SVG origin that bpmn-js leaves in its output.
  *
  * bpmn-js `saveSVG()` produces SVGs where:
@@ -149,18 +161,19 @@ export function getSystemFontFiles(): string[] {
  * If `background` is given, inserts a background rect matching the viewBox.
  */
 export function cropSvgToViewBox(svg: string, background?: string): string {
-  const viewBoxMatch = svg.match(/viewBox="([^"]+)"/);
-  if (!viewBoxMatch) return svg;
+  const normalizedSvg = fixMarkerUrls(svg);
+  const viewBoxMatch = normalizedSvg.match(/viewBox="([^"]+)"/);
+  if (!viewBoxMatch) return normalizedSvg;
   const parts = viewBoxMatch[1].trim().split(/[\s,]+/);
-  if (parts.length !== 4) return svg;
+  if (parts.length !== 4) return normalizedSvg;
   const [x, y, w, h] = parts.map(Number);
-  if (!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) return svg;
+  if (!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) return normalizedSvg;
 
-  let updatedSvg = svg
+  let updatedSvg = normalizedSvg
     .replace(/(<svg[^>]*)\bwidth="[^"]*"/, `$1width="${w}"`)
     .replace(/(<svg[^>]*)\bheight="[^"]*"/, `$1height="${h}"`);
 
-  if (background && !svg.includes('class="bpmn-to-image-background"')) {
+  if (background && !normalizedSvg.includes('class="bpmn-to-image-background"')) {
     const bgX = isFinite(x) ? x : 0;
     const bgY = isFinite(y) ? y : 0;
     const bgRect = `<rect class="bpmn-to-image-background" x="${bgX}" y="${bgY}" width="${w}" height="${h}" fill="${background}"/>`;
@@ -252,7 +265,7 @@ export function tightenSvgViewBox(
     const vbW = Math.round(bounds.maxX - bounds.minX + 2 * padding);
     const vbH = Math.round(bounds.maxY - bounds.minY + 2 * padding);
 
-    let updatedSvg = svg
+    let updatedSvg = fixMarkerUrls(svg)
       .replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${vbY} ${vbW} ${vbH}"`)
       .replace(/(<svg[^>]*)\bwidth="[^"]*"/, `$1width="${vbW}"`)
       .replace(/(<svg[^>]*)\bheight="[^"]*"/, `$1height="${vbH}"`);
@@ -296,7 +309,7 @@ export function rasterizeSvg(
   const scale = typeof scaleOrOptions === 'number' ? scaleOrOptions : (scaleOrOptions.scale ?? 2);
   const bg =
     typeof scaleOrOptions === 'object' ? (scaleOrOptions.background ?? background) : background;
-  const cropped = cropSvgToViewBox(svg, bg);
+  const cropped = cropSvgToViewBox(fixMarkerUrls(svg), bg);
   const fontFiles = getSystemFontFiles();
   const resvg = new Resvg(cropped, {
     fitTo: { mode: 'zoom' as const, value: scale },
