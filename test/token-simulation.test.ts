@@ -3,7 +3,11 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { framesToMp4, framesToWebp, isFfmpegAvailable } from '../src/token-simulation/ffmpeg';
 import { framesToGif } from '../src/token-simulation/gif';
-import { exportScenarioTemplate, parseScenario } from '../src/token-simulation/scenario';
+import {
+  exportScenarioTemplate,
+  namedTokens,
+  parseScenario,
+} from '../src/token-simulation/scenario';
 import { DEFAULT_FPS, SMOOTH_FPS, renderScenarioFrames } from '../src/token-simulation/simulate';
 import {
   renderScenarioToApng,
@@ -29,6 +33,26 @@ function tokenPositions(svg: string): { x: number; y: number }[] {
     positions.push({ x: Number(match[1]), y: Number(match[2]) });
   }
   return positions;
+}
+
+/** Extract all text content inside `<g class="bts-token">` text elements from an SVG frame. */
+function tokenGfxNumbers(svg: string): string[] {
+  const matches = [
+    ...svg.matchAll(
+      /<g class="bts-token"[^>]*>[\s\S]*?<text class="bts-text"[^>]*>([^<]+)<\/text>/g
+    ),
+  ];
+  return matches.map((m) => m[1].trim());
+}
+
+/** Extract all text content inside `<g class="bts-token-count">` text elements from an SVG frame. */
+function tokenCountNumbers(svg: string): string[] {
+  const matches = [
+    ...svg.matchAll(
+      /<g class="bts-token-count"[^>]*>[\s\S]*?<text class="bts-text"[^>]*>([^<]+)<\/text>/g
+    ),
+  ];
+  return matches.map((m) => m[1].trim());
 }
 
 const oneTokenScenario = `
@@ -69,6 +93,47 @@ name = "t1"
 
   test('rejects a token with no steps', () => {
     expect(() => parseScenario('[[token]]\nname = "t1"\n')).toThrow(/no \[\[token\.step\]\]/);
+  });
+
+  test('parses and validates token number', () => {
+    const scenario = parseScenario(`
+[[token]]
+name = "t1"
+number = 42
+
+  [[token.step]]
+  element = "StartEvent_1"
+`);
+    expect(scenario.token?.[0].number).toBe(42);
+    expect(() =>
+      parseScenario(
+        '[[token]]\nname = "t1"\nnumber = "invalid"\n[[token.step]]\nelement = "StartEvent_1"\n'
+      )
+    ).toThrow(/number/);
+  });
+});
+
+describe('namedTokens', () => {
+  test('autoincrements token numbers when not provided', () => {
+    const tokens = namedTokens({
+      token: [
+        { name: 'first', step: [{ element: 'StartEvent_1' }] },
+        { name: 'second', step: [{ element: 'StartEvent_1' }] },
+      ],
+    });
+    expect(tokens[0].number).toBe(1);
+    expect(tokens[1].number).toBe(2);
+  });
+
+  test('preserves explicit token numbers and handles token-N names', () => {
+    const tokens = namedTokens({
+      token: [
+        { name: 'custom', number: 10, step: [{ element: 'StartEvent_1' }] },
+        { name: 'token-5', step: [{ element: 'StartEvent_1' }] },
+      ],
+    });
+    expect(tokens[0].number).toBe(10);
+    expect(tokens[1].number).toBe(5);
   });
 });
 
@@ -231,6 +296,87 @@ name = "rejected"
     const rejectedSide = positionsAfterGateway.some((p) => p.y > 200);
     expect(approvedSide).toBe(true);
     expect(rejectedSide).toBe(true);
+
+    const gfxNumbers = frames.flatMap((f) => tokenGfxNumbers(f.svg));
+    expect(gfxNumbers).toContain('1');
+    expect(gfxNumbers).toContain('2');
+  });
+
+  test('autoincrements token numbers for multiple tokens', async () => {
+    const { frames } = await renderScenarioFrames(
+      sampleXml,
+      `
+[[token]]
+name = "first"
+
+  [[token.step]]
+  element = "StartEvent_1"
+
+[[token]]
+name = "second"
+
+  [[token.step]]
+  element = "StartEvent_1"
+  at_ms = 400
+`,
+      { tailMs: 2000 }
+    );
+
+    const allTokenNumbers = frames.flatMap((f) => tokenGfxNumbers(f.svg));
+    expect(allTokenNumbers).toContain('1');
+    expect(allTokenNumbers).toContain('2');
+  });
+
+  test('renders autoincremented token numbers on waiting tokens', async () => {
+    const { frames } = await renderScenarioFrames(
+      intermediateTimerXml,
+      `
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_timer"
+
+  [[token.step]]
+  element = "TimerEvent_1"
+  at_ms = 2500
+
+[[token]]
+name = "t2"
+
+  [[token.step]]
+  element = "StartEvent_timer"
+  at_ms = 400
+
+  [[token.step]]
+  element = "TimerEvent_1"
+  at_ms = 3000
+`,
+      { tailMs: 500 }
+    );
+
+    const countNumbers = frames.flatMap((f) => tokenCountNumbers(f.svg));
+    expect(countNumbers).toContain('1');
+    expect(countNumbers).toContain('2');
+  });
+
+  test('respects explicit token numbers in scenario', async () => {
+    const { frames } = await renderScenarioFrames(
+      sampleXml,
+      `
+[[token]]
+name = "custom"
+number = 42
+
+  [[token.step]]
+  element = "StartEvent_1"
+`,
+      { tailMs: 1000 }
+    );
+
+    const numbers = frames.flatMap((f) => tokenGfxNumbers(f.svg));
+    expect(numbers).toContain('42');
+    expect(numbers).not.toContain('1');
   });
 
   test("the `fps` option overrides the scenario's own `fps`", async () => {

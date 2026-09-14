@@ -16,5 +16,32 @@
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import TokenSimulationBaseModule from 'bpmn-js-token-simulation/lib/base';
 import RobotModule from '../robot';
+import Animation from 'bpmn-js-token-simulation/lib/animation/Animation';
+import TokenCount from 'bpmn-js-token-simulation/lib/features/token-count/TokenCount';
+
+// Patch Animation to render the scope's token number instead of hardcoded '1'
+const originalGetTokenSVG = (Animation as any).prototype._getTokenSVG;
+(Animation as any).prototype._getTokenSVG = function (scope: any) {
+  const svg: string = originalGetTokenSVG.call(this, scope);
+  const tokenNumber = scope?.tokenNumber != null ? scope.tokenNumber : 1;
+  return svg.replace(
+    /(<text[^>]*class="[^"]*bts-text[^"]*"[^>]*>)\s*1\s*(<\/text>)/,
+    `$1${tokenNumber}$2`
+  );
+};
+
+// Patch TokenCount to display the scope's token number when waiting
+const originalGetTokenHTML = (TokenCount as any).prototype._getTokenHTML;
+(TokenCount as any).prototype._getTokenHTML = function (element: any, scope: any) {
+  const html: string = originalGetTokenHTML.call(this, element, scope);
+  const tokenNumber = scope?.tokenNumber;
+  if (tokenNumber != null) {
+    return html.replace(
+      /(<div[^>]*class="[^"]*bts-token-count[^"]*"[^>]*>)\s*[\d.]+\s*(<\/div>)/,
+      `$1${tokenNumber}$2`
+    );
+  }
+  return html;
+};
 
 (window as any).__TokenSimBpmnJS = { BpmnModeler, TokenSimulationBaseModule, RobotModule };

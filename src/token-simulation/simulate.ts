@@ -90,37 +90,92 @@ const GATEWAY_TYPES = new Set(['bpmn:ExclusiveGateway', 'bpmn:InclusiveGateway']
 
 interface TrackedToken {
   name: string;
+  number: number;
   steps: { step: ScenarioStep; consumed: boolean }[];
 }
 
 /** Per-render bookkeeping: which scope belongs to which named token, and each token's remaining steps. */
 class TokenTracker {
   private readonly tokenNameByScope = new WeakMap<any, string>();
+  private readonly tokenNumberByScope = new WeakMap<any, number>();
+  private readonly scopeById = new Map<string, any>();
   private readonly tokens: TrackedToken[];
+  private nextAutoTokenNumber = 1;
   /** Set right before calling a start-event trigger, so the newly-created root scope gets tagged. */
   private expectingTokenName: string | null = null;
 
-  constructor(tokens: { name: string; step: ScenarioStep[] }[]) {
-    this.tokens = tokens.map((t) => ({
+  constructor(tokens: { name: string; number?: number; step: ScenarioStep[] }[]) {
+    this.tokens = tokens.map((t, i) => ({
       name: t.name,
+      number: t.number ?? i + 1,
       steps: t.step.map((step) => ({ step, consumed: false })),
     }));
+    this.nextAutoTokenNumber =
+      this.tokens.length > 0 ? Math.max(...this.tokens.map((t) => t.number), 0) + 1 : 1;
   }
 
   /** Wire scope-tagging propagation into the simulator's eventBus. Call once, before driving the simulation. */
   attach(eventBus: any): void {
     eventBus.on('tokenSimulation.simulator.createScope', ({ scope }: { scope: any }) => {
+      if (scope?.id) {
+        this.scopeById.set(scope.id, scope);
+      }
       if (this.expectingTokenName && !scope.parent) {
         this.tokenNameByScope.set(scope, this.expectingTokenName);
+        const tokenConfig = this.tokens.find((t) => t.name === this.expectingTokenName);
+        const tokenNum = tokenConfig?.number ?? this.nextAutoTokenNumber++;
+        this.tokenNumberByScope.set(scope, tokenNum);
+        scope.tokenNumber = tokenNum;
         this.expectingTokenName = null;
-      } else if (scope.parent && this.tokenNameByScope.has(scope.parent)) {
-        this.tokenNameByScope.set(scope, this.tokenNameByScope.get(scope.parent)!);
+      } else if (scope.parent) {
+        if (this.tokenNameByScope.has(scope.parent)) {
+          this.tokenNameByScope.set(scope, this.tokenNameByScope.get(scope.parent)!);
+        }
+        const parentNum = this.tokenNumberByScope.get(scope.parent) ?? scope.parent.tokenNumber;
+        if (parentNum != null) {
+          this.tokenNumberByScope.set(scope, parentNum);
+          scope.tokenNumber = parentNum;
+        }
+      } else if (!scope.parent) {
+        const tokenNum = this.nextAutoTokenNumber++;
+        this.tokenNumberByScope.set(scope, tokenNum);
+        scope.tokenNumber = tokenNum;
+      }
+    });
+
+    eventBus.on('tokenSimulation.animationCreated', ({ animation }: any) => {
+      const tokenNumber = animation?.scope?.tokenNumber ?? this.getTokenNumber(animation?.scope);
+      if (tokenNumber != null && animation?.gfx) {
+        const textEl = animation.gfx.querySelector?.('.bts-text');
+        if (textEl && textEl.textContent !== String(tokenNumber)) {
+          textEl.textContent = String(tokenNumber);
+        }
       }
     });
   }
 
   tokenNames(): string[] {
     return this.tokens.map((t) => t.name);
+  }
+
+  getTokenNumber(scope: any): number | undefined {
+    if (!scope) return undefined;
+    if (scope.tokenNumber != null) return scope.tokenNumber;
+    if (this.tokenNumberByScope.has(scope)) return this.tokenNumberByScope.get(scope);
+    if (scope.parent) return this.getTokenNumber(scope.parent);
+    const tokenName = this.tokenNameByScope.get(scope);
+    if (tokenName) {
+      return this.tokens.find((t) => t.name === tokenName)?.number;
+    }
+    return undefined;
+  }
+
+  getTokenNumberByScopeId(scopeId: string, simulator?: any): number | undefined {
+    let scope = this.scopeById.get(scopeId);
+    if (!scope && simulator?.findScope) {
+      scope = simulator.findScope({ id: scopeId });
+    }
+    return this.getTokenNumber(scope);
   }
 
   /** The first unconsumed step of `element` for `tokenName`, if any. */
@@ -262,7 +317,12 @@ function validateScenario(
  * catch events, or tasks) as SVG elements with jumping bounce animation,
  * matching bpmn-js-token-simulation's interactive overlay appearance.
  */
-function renderTokenCountsSvg(overlays: any, t: number): string {
+function renderTokenCountsSvg(
+  overlays: any,
+  tracker: TokenTracker,
+  t: number,
+  simulator?: any
+): string {
   const tokenCountOverlays = overlays?.get?.({ type: 'bts-token-count' }) ?? [];
   if (!Array.isArray(tokenCountOverlays) || tokenCountOverlays.length === 0) return '';
 
@@ -311,7 +371,11 @@ function renderTokenCountsSvg(overlays: any, t: number): string {
       const node = tokenCountNodes[i];
       if (node.classList?.contains('inactive')) continue;
 
-      const count = node.textContent?.trim() || '1';
+      const scopeId = node.getAttribute
+        ? node.getAttribute('data-scope-id')
+        : node.dataset?.scopeId;
+      const tokenNumber = scopeId ? tracker.getTokenNumberByScopeId(scopeId, simulator) : undefined;
+      const count = tokenNumber != null ? String(tokenNumber) : node.textContent?.trim() || '1';
       const bg = node.style?.backgroundColor || node.style?.background || '#10D070';
       const color = node.style?.color || '#FFFFFF';
 
@@ -421,7 +485,7 @@ export async function renderScenarioFrames(
       }
 
       let { svg } = await modeler.saveSVG();
-      const tokenCountsSvg = renderTokenCountsSvg(overlays, t);
+      const tokenCountsSvg = renderTokenCountsSvg(overlays, tracker, t, simulator);
       if (tokenCountsSvg && svg) {
         svg = svg.replace('</svg>', `${tokenCountsSvg}</svg>`);
       }

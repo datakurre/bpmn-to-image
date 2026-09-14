@@ -55,6 +55,8 @@ export interface ScenarioStep {
 export interface ScenarioToken {
   /** Label for readability/debugging; auto-generated (`token-1`, ...) when omitted. */
   name?: string;
+  /** Token number displayed in animation; auto-incremented (1, 2, ...) when omitted. */
+  number?: number;
   /**
    * Ordered steps for this token. The first step spawns it (must target a
    * start event); later steps are consumed in order as this token's flow
@@ -83,6 +85,9 @@ export function parseScenario(toml: string): Scenario {
 
   (parsed.token ?? []).forEach((token, tokenIndex) => {
     const label = token.name ?? `token[${tokenIndex}]`;
+    if (token.number !== undefined && (typeof token.number !== 'number' || isNaN(token.number))) {
+      throw new Error(`[bpmn-to-image] token "${label}" has an invalid "number" value`);
+    }
     if (!Array.isArray(token.step) || token.step.length === 0) {
       throw new Error(`[bpmn-to-image] token "${label}" has no [[token.step]] entries`);
     }
@@ -92,12 +97,17 @@ export function parseScenario(toml: string): Scenario {
   return parsed;
 }
 
-/** Assign auto-generated names to tokens that don't have one. */
+/** Assign auto-generated names and numbers to tokens that don't have them. */
 export function namedTokens(scenario: Scenario): Required<ScenarioToken>[] {
-  return (scenario.token ?? []).map((token, i) => ({
-    name: token.name ?? `token-${i + 1}`,
-    step: token.step,
-  }));
+  return (scenario.token ?? []).map((token, i) => {
+    const match = token.name?.match(/^token-(\d+)$/);
+    const defaultNumber = match ? parseInt(match[1], 10) : i + 1;
+    return {
+      name: token.name ?? `token-${i + 1}`,
+      number: token.number ?? defaultNumber,
+      step: token.step,
+    };
+  });
 }
 
 // ── Scaffold export ─────────────────────────────────────────────────────
