@@ -300,9 +300,12 @@ class TokenTracker {
       const hasBoundaryStep = element.attachers.some((attacher: any) =>
         this.findPendingStep(tokenName, attacher.id)
       );
-      if (hasBoundaryStep) {
-        simulator.setConfig(element, { wait: true });
-      }
+      // `wait` is per-element config, shared across every token that ever
+      // enters this element — not per-scope. Explicitly clear it for a
+      // token that doesn't need the hold, or it stays stuck at `true`
+      // forever from an earlier, unrelated token's boundary wait (nothing
+      // else ever resets it), hanging this token indefinitely.
+      simulator.setConfig(element, { wait: hasBoundaryStep });
     });
   }
 
