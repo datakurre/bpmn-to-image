@@ -87,6 +87,18 @@ export interface RenderScenarioResult {
 }
 
 const GATEWAY_TYPES = new Set(['bpmn:ExclusiveGateway', 'bpmn:InclusiveGateway']);
+export const DEFAULT_ROBOT_TASK_PAUSE_MS = 1000;
+
+export function getRobotTaskPauseMs(): number {
+  const envVal = process.env.ROBOT_TASK_PAUSE_MS?.trim();
+  if (envVal) {
+    const parsed = Number(envVal);
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return DEFAULT_ROBOT_TASK_PAUSE_MS;
+}
 
 interface TrackedToken {
   name: string;
@@ -99,6 +111,7 @@ class TokenTracker {
   private readonly tokenNameByScope = new WeakMap<any, string>();
   private readonly tokenNumberByScope = new WeakMap<any, number>();
   private readonly scopeById = new Map<string, any>();
+  private readonly robotTaskWaits: { scope: any; element: any; dueAtMs: number }[] = [];
   private readonly tokens: TrackedToken[];
   private nextAutoTokenNumber = 1;
   /** Set right before calling a start-event trigger, so the newly-created root scope gets tagged. */
@@ -204,6 +217,68 @@ class TokenTracker {
       });
       entry.consumed = true;
     });
+  }
+
+  /**
+   * Pause activity tasks that have attached boundary events if the entering
+   * token has a pending boundary step, so the activity does not auto-complete
+   * before the boundary event triggers.
+   */
+  installBoundaryHook(eventBus: any, simulator: any): void {
+    eventBus.on('tokenSimulation.simulator.trace', ({ action, element, scope }: any) => {
+      if (action !== 'enter' || !element?.attachers || element.attachers.length === 0) return;
+      const tokenName = scope && this.tokenNameByScope.get(scope);
+      if (!tokenName) return;
+
+      const hasBoundaryStep = element.attachers.some((attacher: any) =>
+        this.findPendingStep(tokenName, attacher.id)
+      );
+      if (hasBoundaryStep) {
+        simulator.setConfig(element, { wait: true });
+      }
+    });
+  }
+
+  /** Pause robot service tasks long enough for their waiting token to bounce. */
+  installRobotTaskPause(
+    eventBus: any,
+    elementRegistry: any,
+    simulator: any,
+    now: () => number
+  ): void {
+    const pauseMs = getRobotTaskPauseMs();
+    if (pauseMs <= 0) return;
+
+    for (const element of elementRegistry.getAll()) {
+      if (element.type === 'bpmn:ServiceTask' && /robot/i.test(element.id)) {
+        simulator.setConfig(element, { wait: true });
+      }
+    }
+
+    eventBus.on('tokenSimulation.simulator.trace', ({ action, element, scope }: any) => {
+      if (action === 'enter' && element?.type === 'bpmn:ServiceTask' && /robot/i.test(element.id)) {
+        this.robotTaskWaits.push({ scope, element, dueAtMs: now() + pauseMs });
+      }
+    });
+  }
+
+  applyDueRobotTaskPauses(atMs: number, simulator: any): void {
+    for (let index = this.robotTaskWaits.length - 1; index >= 0; index--) {
+      const wait = this.robotTaskWaits[index];
+      if (wait.dueAtMs > atMs) continue;
+
+      const subscription = simulator
+        .findSubscriptions({ element: wait.element })
+        .find((candidate: any) => candidate.scope === wait.scope);
+      if (subscription) {
+        subscription.triggerFn();
+      }
+      this.robotTaskWaits.splice(index, 1);
+    }
+  }
+
+  hasPendingRobotTaskPauses(): boolean {
+    return this.robotTaskWaits.length > 0;
   }
 
   /** Fire the given token's next due event step (start/catch/boundary), if reachable. Returns whether one fired. */
@@ -450,8 +525,11 @@ export async function renderScenarioFrames(
   validateScenario(elementRegistry, tokens);
 
   const tracker = new TokenTracker(tokens);
+  let t = 0;
   tracker.attach(eventBus);
   tracker.installGatewayHook(eventBus, elementRegistry, simulator);
+  tracker.installBoundaryHook(eventBus, simulator);
+  tracker.installRobotTaskPause(eventBus, elementRegistry, simulator, () => t);
 
   const clock = installVirtualClock(getTokenSimulationWindow());
 
@@ -477,12 +555,12 @@ export async function renderScenarioFrames(
     const tokenNames = tracker.tokenNames();
     const frames: AnimationFrame[] = [];
     let idleSinceMs: number | null = null;
-    let t = 0;
 
     while (t <= maxDurationMs) {
       for (const tokenName of tokenNames) {
         tracker.applyDueEventStep(tokenName, t, simulator, elementRegistry);
       }
+      tracker.applyDueRobotTaskPauses(t, simulator);
 
       let { svg } = await modeler.saveSVG();
       const tokenCountsSvg = renderTokenCountsSvg(overlays, tracker, t, simulator);
@@ -498,7 +576,8 @@ export async function renderScenarioFrames(
 
       const active =
         Boolean(animation && animation._animations && animation._animations.size > 0) ||
-        tracker.hasPendingEventSteps(t, simulator, elementRegistry);
+        tracker.hasPendingEventSteps(t, simulator, elementRegistry) ||
+        tracker.hasPendingRobotTaskPauses();
 
       if (active) {
         idleSinceMs = null;

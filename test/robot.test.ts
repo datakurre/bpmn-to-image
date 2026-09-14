@@ -45,4 +45,24 @@ describe('robot plugin', () => {
       expect(frame.svg).not.toContain('<image');
     }
   });
+
+  test('renderScenarioFrames pauses at robot task with bouncing token and terminates promptly', async () => {
+    const result = await renderScenarioFrames(robotXml);
+    const countFrames = result.frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBeGreaterThan(0);
+    const lastFrame = result.frames[result.frames.length - 1];
+    expect(lastFrame.atMs).toBeGreaterThanOrEqual(1000);
+    expect(lastFrame.atMs).toBeLessThan(10000);
+  });
+
+  test('respects ROBOT_TASK_PAUSE_MS environment variable', async () => {
+    process.env.ROBOT_TASK_PAUSE_MS = '0';
+    try {
+      const result = await renderScenarioFrames(robotXml);
+      const countFrames = result.frames.filter((frame) => frame.svg.includes('bts-token-count'));
+      expect(countFrames.length).toBe(0);
+    } finally {
+      delete process.env.ROBOT_TASK_PAUSE_MS;
+    }
+  });
 });

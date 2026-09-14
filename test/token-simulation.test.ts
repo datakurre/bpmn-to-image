@@ -23,6 +23,48 @@ const intermediateTimerXml = readFileSync(
   'utf-8'
 );
 const exampleXml = readFileSync(join(__dirname, '../example.bpmn'), 'utf-8');
+const boundaryEventXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   id="Definitions_boundary"
+                   targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_boundary" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_to_task</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_main">
+      <bpmn:incoming>Flow_to_task</bpmn:incoming>
+      <bpmn:outgoing>Flow_normal</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:boundaryEvent id="BoundaryEvent_1" attachedToRef="Task_main">
+      <bpmn:outgoing>Flow_boundary</bpmn:outgoing>
+      <bpmn:timerEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:endEvent id="EndEvent_normal">
+      <bpmn:incoming>Flow_normal</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_boundary">
+      <bpmn:incoming>Flow_boundary</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_to_task" sourceRef="StartEvent_1" targetRef="Task_main" />
+    <bpmn:sequenceFlow id="Flow_normal" sourceRef="Task_main" targetRef="EndEvent_normal" />
+    <bpmn:sequenceFlow id="Flow_boundary" sourceRef="BoundaryEvent_1" targetRef="EndEvent_boundary" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_boundary">
+    <bpmndi:BPMNPlane id="BPMNPlane_boundary" bpmnElement="Process_boundary">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_main_di" bpmnElement="Task_main"><dc:Bounds x="180" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryEvent_1_di" bpmnElement="BoundaryEvent_1"><dc:Bounds x="230" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_normal_di" bpmnElement="EndEvent_normal"><dc:Bounds x="350" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_boundary_di" bpmnElement="EndEvent_boundary"><dc:Bounds x="350" y="220" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_to_task_di" bpmnElement="Flow_to_task"><di:waypoint x="136" y="118" /><di:waypoint x="180" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_normal_di" bpmnElement="Flow_normal"><di:waypoint x="280" y="118" /><di:waypoint x="350" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_boundary_di" bpmnElement="Flow_boundary"><di:waypoint x="248" y="178" /><di:waypoint x="248" y="238" /><di:waypoint x="350" y="238" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
 
 /** Extract all `<g class="bts-token" transform="translate(x, y)">` positions from an SVG frame. */
 function tokenPositions(svg: string): { x: number; y: number }[] {
@@ -229,6 +271,34 @@ name = "t1"
       .filter((position) => position.x > 400);
 
     expect(afterTimerPositions.length).toBeGreaterThan(0);
+  });
+
+  test('pauses host task when a boundary event step is pending and fires boundary event', async () => {
+    const { frames } = await renderScenarioFrames(
+      boundaryEventXml,
+      `
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+
+  [[token.step]]
+  element = "BoundaryEvent_1"
+  at_ms = 0
+`,
+      { tailMs: 100 }
+    );
+
+    // EndEvent_boundary is at y: 220-256; EndEvent_normal is at y: 100-136
+    const endPositions = frames
+      .flatMap((frame) => tokenPositions(frame.svg))
+      .filter((pos) => pos.x > 300);
+
+    expect(endPositions.length).toBeGreaterThan(0);
+    for (const pos of endPositions) {
+      expect(pos.y).toBeGreaterThan(180);
+    }
   });
 
   test('a gateway `take` step steers the token onto the configured branch', async () => {
