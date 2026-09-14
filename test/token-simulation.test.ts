@@ -16,6 +16,7 @@ import {
 } from '../src/token-simulation';
 
 const sampleXml = readFileSync(join(__dirname, 'fixtures/sample.bpmn'), 'utf-8');
+const robotXml = readFileSync(join(__dirname, 'fixtures/robot.bpmn'), 'utf-8');
 const gatewayXml = readFileSync(join(__dirname, 'fixtures/gateway.bpmn'), 'utf-8');
 const multilineLabelXml = readFileSync(join(__dirname, 'fixtures/multiline-label.bpmn'), 'utf-8');
 const intermediateTimerXml = readFileSync(
@@ -152,6 +153,54 @@ number = 42
         '[[token]]\nname = "t1"\nnumber = "invalid"\n[[token.step]]\nelement = "StartEvent_1"\n'
       )
     ).toThrow(/number/);
+  });
+
+  test('parses and validates task_pause_ms and pause_ms', () => {
+    const scenario = parseScenario(`
+task_pause_ms = 500
+
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+
+  [[token.step]]
+  element = "Task_1"
+  pause_ms = 1000
+`);
+    expect(scenario.task_pause_ms).toBe(500);
+    expect(scenario.token?.[0].step[1].pause_ms).toBe(1000);
+
+    const scenarioAlias = parseScenario(`
+pause_ms = 300
+
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+
+  [[token.step]]
+  element = "Task_1"
+  wait_ms = 800
+`);
+    expect(scenarioAlias.pause_ms).toBe(300);
+    expect(scenarioAlias.token?.[0].step[1].wait_ms).toBe(800);
+
+    expect(() =>
+      parseScenario(
+        'task_pause_ms = -1\n[[token]]\nname = "t1"\n[[token.step]]\nelement = "StartEvent_1"\n'
+      )
+    ).toThrow(/task_pause_ms/);
+    expect(() =>
+      parseScenario('[[token]]\nname = "t1"\n[[token.step]]\nelement = "Task_1"\npause_ms = -5\n')
+    ).toThrow(/pause_ms/);
+    expect(() =>
+      parseScenario(
+        '[[token]]\nname = "t1"\n[[token.step]]\nelement = "Task_1"\nwait_ms = "invalid"\n'
+      )
+    ).toThrow(/wait_ms/);
   });
 });
 
@@ -298,6 +347,144 @@ name = "t1"
     expect(endPositions.length).toBeGreaterThan(0);
     for (const pos of endPositions) {
       expect(pos.y).toBeGreaterThan(180);
+    }
+  });
+
+  test('pauses at task with bouncing token when task_pause_ms is configured in scenario', async () => {
+    const { frames } = await renderScenarioFrames(
+      sampleXml,
+      `
+task_pause_ms = 500
+
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+`
+    );
+    const countFrames = frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBeGreaterThan(0);
+    const lastFrame = frames[frames.length - 1];
+    expect(lastFrame.atMs).toBeGreaterThanOrEqual(500);
+  });
+
+  test('pauses at task with bouncing token when step-level pause_ms is configured', async () => {
+    const { frames } = await renderScenarioFrames(
+      sampleXml,
+      `
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+
+  [[token.step]]
+  element = "Task_1"
+  pause_ms = 400
+`
+    );
+    const countFrames = frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBeGreaterThan(0);
+  });
+
+  test('step-level pause_ms = 0 overrides scenario-level task_pause_ms', async () => {
+    const { frames } = await renderScenarioFrames(
+      sampleXml,
+      `
+task_pause_ms = 1000
+
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+
+  [[token.step]]
+  element = "Task_1"
+  pause_ms = 0
+`
+    );
+    const countFrames = frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBe(0);
+  });
+
+  test('taskPauseMs in RenderScenarioOptions overrides scenario', async () => {
+    const { frames } = await renderScenarioFrames(
+      sampleXml,
+      `
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+`,
+      { taskPauseMs: 500 }
+    );
+    const countFrames = frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBeGreaterThan(0);
+  });
+
+  test('bouncing token count animation is fully contained within the SVG viewBox across all frames and not cropped', async () => {
+    // Test multiple diagram types with bouncing tokens (tasks, robot tasks, parallel gateways)
+    const testCases = [
+      {
+        xml: sampleXml,
+        scenario: `
+task_pause_ms = 500
+
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+`,
+      },
+      {
+        xml: robotXml,
+        scenario: `
+task_pause_ms = 500
+
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+`,
+      },
+      {
+        xml: exampleXml,
+        scenario: undefined, // default scenario visits parallel join gateway which waits and bounces
+      },
+    ];
+
+    for (const { xml, scenario } of testCases) {
+      const { frames } = await renderScenarioFrames(xml, scenario);
+      const countFrames = frames.filter((frame) => frame.svg.includes('bts-token-count'));
+      expect(countFrames.length).toBeGreaterThan(0);
+
+      for (const frame of countFrames) {
+        const vbMatch = frame.svg.match(/viewBox="([^"]+)"/);
+        expect(vbMatch).toBeDefined();
+        const [vbX, vbY, vbW, vbH] = vbMatch![1].split(' ').map(Number);
+
+        const tokenMatches = [
+          ...frame.svg.matchAll(
+            /<g class="bts-token-count" transform="translate\(([-\d.]+),\s*([-\d.]+)\)">/g
+          ),
+        ];
+        expect(tokenMatches.length).toBeGreaterThan(0);
+
+        for (const tokenMatch of tokenMatches) {
+          const tokenX = Number(tokenMatch[1]);
+          const tokenY = Number(tokenMatch[2]);
+          // Token circle has r=12.5 (width=25, height=25)
+          expect(tokenX).toBeGreaterThanOrEqual(vbX);
+          expect(tokenX + 25).toBeLessThanOrEqual(vbX + vbW);
+          expect(tokenY).toBeGreaterThanOrEqual(vbY);
+          expect(tokenY + 25).toBeLessThanOrEqual(vbY + vbH);
+        }
+      }
     }
   });
 

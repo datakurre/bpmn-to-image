@@ -11,8 +11,12 @@ export {
   svgToPngWithFallback,
   cropSvgToViewBox,
   tightenSvgViewBox,
+  computeElementBounds,
   rasterizeSvg,
   fixMarkerUrls,
+  type ComputeElementBoundsOptions,
+  type Padding,
+  type PaddingObject,
   type RasterizeOptions,
   type SvgToPngOptions,
 } from './svg-to-png';

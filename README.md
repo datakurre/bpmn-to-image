@@ -63,6 +63,11 @@ Both functions accept an optional `background` color and `moddleExtensions` map 
 
 A scenario is a set of **named tokens**, each an independent timeline through the diagram: the first `[[token.step]]` spawns it from a start event, and later steps steer a gateway it reaches (`take`) or fire a catch/boundary event it's waiting on (`at_ms`, ms from simulation start) — _as that specific token_ encounters them. That's what makes concurrent tokens genuinely independent: two tokens can take opposite branches at the very same gateway, because the engine tracks which running scope belongs to which named token rather than just setting one global "current flow" for the whole diagram. Repeating the same element id within one token's steps controls a loop's 1st, 2nd, 3rd, ... visit to it.
 
+By default, token simulation advances through tasks immediately. You can configure tasks to pause for a fixed duration, displaying a bouncing token animation before proceeding:
+
+- Set `task_pause_ms` at the scenario level (e.g. `task_pause_ms = 500`) to pause every task/activity entered by a token.
+- Or configure `pause_ms` on individual `[[token.step]]` entries (e.g. `element = "Task_1"`, `pause_ms = 1000`) to pause specific tasks, or override the scenario default (`pause_ms = 0` to skip pausing on a specific task).
+
 Generate a scenario scaffold for a diagram — it walks the diagram's actual control flow (one token per start event, following the default/first-outgoing path, matching what the interactive tool does with no clicks at all) so you start from real element ids and a runnable default, not a blank file:
 
 ```bash
@@ -71,6 +76,7 @@ bpmn-to-image --export-scenario diagram.bpmn diagram.toml
 
 ```toml
 fps = 12
+task_pause_ms = 500 # optional: pause tasks with bouncing token animation
 
 [[token]]
 name = "request-received-1"
@@ -78,6 +84,10 @@ name = "request-received-1"
   [[token.step]]
   element = "StartEvent_1" # Request received
   at_ms = 0
+
+  [[token.step]]
+  element = "Activity_review" # Review request
+  pause_ms = 1000 # override pause duration for this task
 
   [[token.step]]
   element = "Gateway_1" # Approved?

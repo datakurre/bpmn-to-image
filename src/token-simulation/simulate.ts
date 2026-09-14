@@ -21,6 +21,7 @@
  * moves virtual time forward for that token.
  */
 
+import { is } from 'bpmn-js/lib/util/ModelUtil';
 import camundaModdle from 'camunda-bpmn-moddle/resources/camunda.json';
 import { tightenSvgViewBox } from '../svg-to-png';
 import {
@@ -71,6 +72,12 @@ export interface RenderScenarioOptions {
   tailMs?: number;
   /** Hard cap on total simulated time, guarding against scenarios that never settle. Default: 30000. */
   maxDurationMs?: number;
+  /**
+   * Fixed pause duration (ms) for tasks/activities, displaying a bouncing token
+   * animation while paused before proceeding. Overrides any scenario-level
+   * task_pause_ms.
+   */
+  taskPauseMs?: number;
   /** Called once per rendered frame while driving the simulation. */
   onProgress?: OnProgress;
 }
@@ -87,17 +94,43 @@ export interface RenderScenarioResult {
 }
 
 const GATEWAY_TYPES = new Set(['bpmn:ExclusiveGateway', 'bpmn:InclusiveGateway']);
-export const DEFAULT_ROBOT_TASK_PAUSE_MS = 1000;
+const ACTIVITY_TYPES = new Set([
+  'bpmn:BusinessRuleTask',
+  'bpmn:CallActivity',
+  'bpmn:ManualTask',
+  'bpmn:ScriptTask',
+  'bpmn:ServiceTask',
+  'bpmn:Task',
+  'bpmn:UserTask',
+  'bpmn:SubProcess',
+  'bpmn:Transaction',
+  'bpmn:AdHocSubProcess',
+]);
 
-export function getRobotTaskPauseMs(): number {
-  const envVal = process.env.ROBOT_TASK_PAUSE_MS?.trim();
+export function isActivity(element: any): boolean {
+  if (!element) return false;
+  return is(element, 'bpmn:Activity') || ACTIVITY_TYPES.has(element.type);
+}
+
+export const DEFAULT_TASK_PAUSE_MS = 500;
+export const DEFAULT_ROBOT_TASK_PAUSE_MS = DEFAULT_TASK_PAUSE_MS;
+
+export function getTaskPauseMs(scenario?: Scenario, options?: RenderScenarioOptions): number {
+  if (options?.taskPauseMs !== undefined) return options.taskPauseMs;
+  if (scenario?.task_pause_ms !== undefined) return scenario.task_pause_ms;
+  if (scenario?.pause_ms !== undefined) return scenario.pause_ms;
+  const envVal = (process.env.TASK_PAUSE_MS ?? process.env.ROBOT_TASK_PAUSE_MS)?.trim();
   if (envVal) {
     const parsed = Number(envVal);
     if (!Number.isNaN(parsed) && parsed >= 0) {
       return parsed;
     }
   }
-  return DEFAULT_ROBOT_TASK_PAUSE_MS;
+  return 0;
+}
+
+export function getRobotTaskPauseMs(): number {
+  return getTaskPauseMs();
 }
 
 interface TrackedToken {
@@ -111,8 +144,9 @@ class TokenTracker {
   private readonly tokenNameByScope = new WeakMap<any, string>();
   private readonly tokenNumberByScope = new WeakMap<any, number>();
   private readonly scopeById = new Map<string, any>();
-  private readonly robotTaskWaits: { scope: any; element: any; dueAtMs: number }[] = [];
+  private readonly taskWaits: { scope: any; element: any; dueAtMs: number }[] = [];
   private readonly tokens: TrackedToken[];
+  private readonly waitStartByScopeId = new Map<string, number>();
   private nextAutoTokenNumber = 1;
   /** Set right before calling a start-event trigger, so the newly-created root scope gets tagged. */
   private expectingTokenName: string | null = null;
@@ -129,6 +163,12 @@ class TokenTracker {
 
   /** Wire scope-tagging propagation into the simulator's eventBus. Call once, before driving the simulation. */
   attach(eventBus: any): void {
+    eventBus.on('tokenSimulation.simulator.destroyScope', ({ scope }: any) => {
+      if (scope?.id) {
+        this.waitStartByScopeId.delete(scope.id);
+      }
+    });
+
     eventBus.on('tokenSimulation.simulator.createScope', ({ scope }: { scope: any }) => {
       if (scope?.id) {
         this.scopeById.set(scope.id, scope);
@@ -169,6 +209,19 @@ class TokenTracker {
 
   tokenNames(): string[] {
     return this.tokens.map((t) => t.name);
+  }
+
+  tokenCount(): number {
+    return this.tokens.length;
+  }
+
+  getWaitElapsedMs(scopeId: string, currentMs: number): number {
+    let start = this.waitStartByScopeId.get(scopeId);
+    if (start === undefined) {
+      this.waitStartByScopeId.set(scopeId, currentMs);
+      start = currentMs;
+    }
+    return currentMs - start;
   }
 
   getTokenNumber(scope: any): number | undefined {
@@ -239,32 +292,107 @@ class TokenTracker {
     });
   }
 
-  /** Pause robot service tasks long enough for their waiting token to bounce. */
+  /**
+   * Pause activity tasks long enough for their waiting token to bounce.
+   * Configurable via scenario task_pause_ms, step-level pause_ms, or options.taskPauseMs.
+   */
+  installTaskPause(
+    eventBus: any,
+    elementRegistry: any,
+    simulator: any,
+    defaultPauseMs: number,
+    now: () => number
+  ): void {
+    if (defaultPauseMs > 0) {
+      for (const element of elementRegistry.getAll()) {
+        if (isActivity(element)) {
+          simulator.setConfig(element, { wait: true });
+        }
+      }
+    }
+
+    for (const token of this.tokens) {
+      for (const entry of token.steps) {
+        if (
+          entry.step.pause_ms !== undefined ||
+          entry.step.wait_ms !== undefined ||
+          (entry.step.take === undefined && isActivity(elementRegistry.get(entry.step.element)))
+        ) {
+          const el = elementRegistry.get(entry.step.element);
+          if (el && isActivity(el)) {
+            simulator.setConfig(el, { wait: true });
+          }
+        }
+      }
+    }
+
+    eventBus.on('tokenSimulation.simulator.trace', ({ action, element, scope }: any) => {
+      if (action !== 'enter' || !element) return;
+      const tokenName = scope && this.tokenNameByScope.get(scope);
+
+      // Activity with attached boundary event that has a pending boundary step is handled by boundary hook
+      const hasPendingBoundary =
+        element.attachers &&
+        tokenName &&
+        element.attachers.some((attacher: any) => this.findPendingStep(tokenName, attacher.id));
+      if (hasPendingBoundary) {
+        return;
+      }
+
+      const pendingStepEntry = tokenName ? this.findPendingStep(tokenName, element.id) : undefined;
+      const step = pendingStepEntry?.step;
+
+      let pauseMs: number | undefined;
+      let targetAtMs: number | undefined;
+
+      if (step?.pause_ms !== undefined) {
+        pauseMs = step.pause_ms;
+      } else if (step?.wait_ms !== undefined) {
+        pauseMs = step.wait_ms;
+      } else if (step?.at_ms !== undefined && isActivity(element)) {
+        targetAtMs = step.at_ms;
+      } else if (defaultPauseMs > 0 && isActivity(element)) {
+        pauseMs = defaultPauseMs;
+      }
+
+      if (pauseMs !== undefined) {
+        if (pendingStepEntry) {
+          pendingStepEntry.consumed = true;
+        }
+        if (pauseMs > 0) {
+          simulator.setConfig(element, { wait: true });
+          this.taskWaits.push({ scope, element, dueAtMs: now() + pauseMs });
+        } else {
+          simulator.setConfig(element, { wait: false });
+          const subscription = simulator
+            .findSubscriptions({ element })
+            .find((candidate: any) => candidate.scope === scope);
+          if (subscription) {
+            subscription.triggerFn();
+          }
+        }
+      } else if (targetAtMs !== undefined) {
+        if (pendingStepEntry) {
+          pendingStepEntry.consumed = true;
+        }
+        simulator.setConfig(element, { wait: true });
+        this.taskWaits.push({ scope, element, dueAtMs: targetAtMs });
+      }
+    });
+  }
+
   installRobotTaskPause(
     eventBus: any,
     elementRegistry: any,
     simulator: any,
     now: () => number
   ): void {
-    const pauseMs = getRobotTaskPauseMs();
-    if (pauseMs <= 0) return;
-
-    for (const element of elementRegistry.getAll()) {
-      if (element.type === 'bpmn:ServiceTask' && /robot/i.test(element.id)) {
-        simulator.setConfig(element, { wait: true });
-      }
-    }
-
-    eventBus.on('tokenSimulation.simulator.trace', ({ action, element, scope }: any) => {
-      if (action === 'enter' && element?.type === 'bpmn:ServiceTask' && /robot/i.test(element.id)) {
-        this.robotTaskWaits.push({ scope, element, dueAtMs: now() + pauseMs });
-      }
-    });
+    this.installTaskPause(eventBus, elementRegistry, simulator, getTaskPauseMs(), now);
   }
 
-  applyDueRobotTaskPauses(atMs: number, simulator: any): void {
-    for (let index = this.robotTaskWaits.length - 1; index >= 0; index--) {
-      const wait = this.robotTaskWaits[index];
+  applyDueTaskPauses(atMs: number, simulator: any): void {
+    for (let index = this.taskWaits.length - 1; index >= 0; index--) {
+      const wait = this.taskWaits[index];
       if (wait.dueAtMs > atMs) continue;
 
       const subscription = simulator
@@ -273,12 +401,23 @@ class TokenTracker {
       if (subscription) {
         subscription.triggerFn();
       }
-      this.robotTaskWaits.splice(index, 1);
+      if (wait.scope?.id) {
+        this.waitStartByScopeId.delete(wait.scope.id);
+      }
+      this.taskWaits.splice(index, 1);
     }
   }
 
+  applyDueRobotTaskPauses(atMs: number, simulator: any): void {
+    this.applyDueTaskPauses(atMs, simulator);
+  }
+
+  hasPendingTaskPauses(): boolean {
+    return this.taskWaits.length > 0;
+  }
+
   hasPendingRobotTaskPauses(): boolean {
-    return this.robotTaskWaits.length > 0;
+    return this.hasPendingTaskPauses();
   }
 
   /** Fire the given token's next due event step (start/catch/boundary), if reachable. Returns whether one fired. */
@@ -289,7 +428,13 @@ class TokenTracker {
     elementRegistry: any
   ): boolean {
     const token = this.tokens.find((t) => t.name === tokenName)!;
-    const entry = token.steps.find((s) => !s.consumed && s.step.take === undefined);
+    const entry = token.steps.find(
+      (s) =>
+        !s.consumed &&
+        s.step.take === undefined &&
+        s.step.pause_ms === undefined &&
+        s.step.wait_ms === undefined
+    );
     if (!entry) return false;
     if ((entry.step.at_ms ?? 0) > atMs) return false;
 
@@ -328,7 +473,14 @@ class TokenTracker {
   hasPendingEventSteps(atMs: number, simulator: any, elementRegistry: any): boolean {
     return this.tokens.some((token) =>
       token.steps.some((entry, index) => {
-        if (entry.consumed || entry.step.take !== undefined) return false;
+        if (
+          entry.consumed ||
+          entry.step.take !== undefined ||
+          entry.step.pause_ms !== undefined ||
+          entry.step.wait_ms !== undefined
+        ) {
+          return false;
+        }
         if ((entry.step.at_ms ?? 0) > atMs) return true;
 
         const element = elementRegistry.get(entry.step.element);
@@ -401,8 +553,7 @@ function renderTokenCountsSvg(
   const tokenCountOverlays = overlays?.get?.({ type: 'bts-token-count' }) ?? [];
   if (!Array.isArray(tokenCountOverlays) || tokenCountOverlays.length === 0) return '';
 
-  // Sine bounce jumping animation matching CSS @keyframes bts-jump { 50% { top: 5px; } }
-  const jumpOffset = Math.sin(Math.PI * ((t % 1000) / 1000)) * 5;
+  const BOUNCE_PERIOD_MS = 500;
   const groups: string[] = [];
 
   for (const overlay of tokenCountOverlays) {
@@ -453,6 +604,9 @@ function renderTokenCountsSvg(
       const count = tokenNumber != null ? String(tokenNumber) : node.textContent?.trim() || '1';
       const bg = node.style?.backgroundColor || node.style?.background || '#10D070';
       const color = node.style?.color || '#FFFFFF';
+
+      const elapsed = scopeId ? tracker.getWaitElapsedMs(scopeId, t) : t;
+      const jumpOffset = Math.sin(Math.PI * ((elapsed % BOUNCE_PERIOD_MS) / BOUNCE_PERIOD_MS)) * 5;
 
       const offsetX = i * 17;
       const finalX = baseX + offsetX;
@@ -524,12 +678,13 @@ export async function renderScenarioFrames(
 
   validateScenario(elementRegistry, tokens);
 
+  const defaultTaskPauseMs = getTaskPauseMs(scenario, options);
   const tracker = new TokenTracker(tokens);
   let t = 0;
   tracker.attach(eventBus);
   tracker.installGatewayHook(eventBus, elementRegistry, simulator);
   tracker.installBoundaryHook(eventBus, simulator);
-  tracker.installRobotTaskPause(eventBus, elementRegistry, simulator, () => t);
+  tracker.installTaskPause(eventBus, elementRegistry, simulator, defaultTaskPauseMs, () => t);
 
   const clock = installVirtualClock(getTokenSimulationWindow());
 
@@ -560,7 +715,7 @@ export async function renderScenarioFrames(
       for (const tokenName of tokenNames) {
         tracker.applyDueEventStep(tokenName, t, simulator, elementRegistry);
       }
-      tracker.applyDueRobotTaskPauses(t, simulator);
+      tracker.applyDueTaskPauses(t, simulator);
 
       let { svg } = await modeler.saveSVG();
       const tokenCountsSvg = renderTokenCountsSvg(overlays, tracker, t, simulator);
@@ -569,7 +724,10 @@ export async function renderScenarioFrames(
       }
       frames.push({
         atMs: t,
-        svg: tightenSvgViewBox(svg || '', elementRegistry.getAll(), undefined, options.background),
+        svg: tightenSvgViewBox(svg || '', elementRegistry.getAll(), undefined, options.background, {
+          includeTokenBounds: true,
+          maxTokens: tracker.tokenCount(),
+        }),
       });
       const progressTotal = Math.max(estimatedTotalFrames, frames.length);
       options.onProgress?.({ phase: 'simulate', current: frames.length, total: progressTotal });
@@ -577,7 +735,7 @@ export async function renderScenarioFrames(
       const active =
         Boolean(animation && animation._animations && animation._animations.size > 0) ||
         tracker.hasPendingEventSteps(t, simulator, elementRegistry) ||
-        tracker.hasPendingRobotTaskPauses();
+        tracker.hasPendingTaskPauses();
 
       if (active) {
         idleSinceMs = null;

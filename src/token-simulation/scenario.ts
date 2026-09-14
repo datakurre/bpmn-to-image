@@ -29,10 +29,10 @@ import { parse as parseToml } from 'smol-toml';
 
 /**
  * One step in a token's timeline: fires an event (start/intermediate-catch/
- * boundary), or steers a gateway.
+ * boundary), steers a gateway, or configures a task pause.
  */
 export interface ScenarioStep {
-  /** BPMN element id (start event, catch/boundary event, or gateway). */
+  /** BPMN element id (start event, catch/boundary event, gateway, or task/activity). */
   element: string;
   /**
    * Event steps only (start/catch/boundary): virtual time (ms from
@@ -49,6 +49,14 @@ export interface ScenarioStep {
    * steps (start/intermediate-catch/boundary).
    */
   take?: string | string[];
+  /**
+   * Activity/task pause duration (ms). When entered, the token pauses at
+   * this element for the specified duration with a bouncing token animation
+   * before continuing. Overrides any scenario-level task_pause_ms.
+   */
+  pause_ms?: number;
+  /** Alias for pause_ms. */
+  wait_ms?: number;
 }
 
 /** One token's independent timeline through the diagram. */
@@ -69,6 +77,14 @@ export interface ScenarioToken {
 export interface Scenario {
   /** Rendered animation frame rate. Default: 12. */
   fps?: number;
+  /**
+   * Default pause duration (ms) for tasks/activities. When set, any task/activity
+   * entered by a token pauses for this duration with a bouncing token animation
+   * before continuing, unless overridden by a step-level pause_ms.
+   */
+  task_pause_ms?: number;
+  /** Alias for task_pause_ms. */
+  pause_ms?: number;
   token?: ScenarioToken[];
 }
 
@@ -77,11 +93,38 @@ function assertStep(step: unknown, where: string): asserts step is ScenarioStep 
   if (!s || typeof s.element !== 'string' || s.element.length === 0) {
     throw new Error(`[bpmn-to-image] ${where} is missing a string "element" id`);
   }
+  if (
+    s.pause_ms !== undefined &&
+    (typeof s.pause_ms !== 'number' || isNaN(s.pause_ms) || s.pause_ms < 0)
+  ) {
+    throw new Error(`[bpmn-to-image] ${where} has an invalid "pause_ms" value`);
+  }
+  if (
+    s.wait_ms !== undefined &&
+    (typeof s.wait_ms !== 'number' || isNaN(s.wait_ms) || s.wait_ms < 0)
+  ) {
+    throw new Error(`[bpmn-to-image] ${where} has an invalid "wait_ms" value`);
+  }
 }
 
 /** Parse a scenario TOML document. */
 export function parseScenario(toml: string): Scenario {
   const parsed = parseToml(toml) as unknown as Scenario;
+
+  if (
+    parsed.task_pause_ms !== undefined &&
+    (typeof parsed.task_pause_ms !== 'number' ||
+      isNaN(parsed.task_pause_ms) ||
+      parsed.task_pause_ms < 0)
+  ) {
+    throw new Error('[bpmn-to-image] scenario has an invalid "task_pause_ms" value');
+  }
+  if (
+    parsed.pause_ms !== undefined &&
+    (typeof parsed.pause_ms !== 'number' || isNaN(parsed.pause_ms) || parsed.pause_ms < 0)
+  ) {
+    throw new Error('[bpmn-to-image] scenario has an invalid "pause_ms" value');
+  }
 
   (parsed.token ?? []).forEach((token, tokenIndex) => {
     const label = token.name ?? `token[${tokenIndex}]`;
@@ -286,6 +329,9 @@ export async function exportScenarioTemplate(xml: string): Promise<string> {
     '# waiting on (at `at_ms`, ms from simulation start). Add more [[token]]',
     '# blocks for concurrent tokens; repeat the same element id within one',
     "# token's steps to control a loop's 2nd, 3rd, ... visit.",
+    '#',
+    '# Optional: set task_pause_ms = 500 to pause at tasks with a bouncing token',
+    '# animation, or specify pause_ms on individual [[token.step]] entries.',
     '',
     'fps = 12',
     '',

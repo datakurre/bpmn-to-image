@@ -46,23 +46,67 @@ describe('robot plugin', () => {
     }
   });
 
-  test('renderScenarioFrames pauses at robot task with bouncing token and terminates promptly', async () => {
-    const result = await renderScenarioFrames(robotXml);
+  test('renderScenarioFrames pauses at robot task with bouncing token and terminates promptly when configured in scenario', async () => {
+    const result = await renderScenarioFrames(
+      robotXml,
+      `
+task_pause_ms = 500
+
+[[token]]
+name = "token-1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+`
+    );
     const countFrames = result.frames.filter((frame) => frame.svg.includes('bts-token-count'));
     expect(countFrames.length).toBeGreaterThan(0);
     const lastFrame = result.frames[result.frames.length - 1];
-    expect(lastFrame.atMs).toBeGreaterThanOrEqual(1000);
+    expect(lastFrame.atMs).toBeGreaterThanOrEqual(500);
     expect(lastFrame.atMs).toBeLessThan(10000);
+
+    // Verify that the bouncing token is fully contained within the viewBox in all frames
+    for (const frame of countFrames) {
+      const vbMatch = frame.svg.match(/viewBox="([^"]+)"/);
+      expect(vbMatch).toBeDefined();
+      const [vbX, vbY, vbW, vbH] = vbMatch![1].split(' ').map(Number);
+      const tokenMatch = frame.svg.match(
+        /<g class="bts-token-count" transform="translate\(([-\d.]+),\s*([-\d.]+)\)">/
+      );
+      if (tokenMatch) {
+        const tokenX = Number(tokenMatch[1]);
+        const tokenY = Number(tokenMatch[2]);
+        // Circle has radius 12.5, diameter 25
+        expect(tokenX).toBeGreaterThanOrEqual(vbX);
+        expect(tokenX + 25).toBeLessThanOrEqual(vbX + vbW);
+        expect(tokenY).toBeGreaterThanOrEqual(vbY);
+        expect(tokenY + 25).toBeLessThanOrEqual(vbY + vbH);
+      }
+    }
   });
 
-  test('respects ROBOT_TASK_PAUSE_MS environment variable', async () => {
-    process.env.ROBOT_TASK_PAUSE_MS = '0';
-    try {
-      const result = await renderScenarioFrames(robotXml);
-      const countFrames = result.frames.filter((frame) => frame.svg.includes('bts-token-count'));
-      expect(countFrames.length).toBe(0);
-    } finally {
-      delete process.env.ROBOT_TASK_PAUSE_MS;
-    }
+  test('renderScenarioFrames pauses at robot task via step-level pause_ms', async () => {
+    const result = await renderScenarioFrames(
+      robotXml,
+      `
+[[token]]
+name = "token-1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+
+  [[token.step]]
+  element = "Activity_robot_task"
+  pause_ms = 500
+`
+    );
+    const countFrames = result.frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBeGreaterThan(0);
+  });
+
+  test('does not pause at robot task when no pause is configured in scenario', async () => {
+    const result = await renderScenarioFrames(robotXml);
+    const countFrames = result.frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBe(0);
   });
 });

@@ -186,6 +186,22 @@ export function cropSvgToViewBox(svg: string, background?: string): string {
 /** Padding (px) around diagram content in tightened SVG viewBox. */
 const TIGHTEN_PADDING = 10;
 
+export interface ComputeElementBoundsOptions {
+  /** If true, expands bounds to account for token-simulation token count overlays and jump animation. */
+  includeTokenBounds?: boolean;
+  /** Maximum number of concurrent tokens expected (for multi-token horizontal offsets). Default: 1. */
+  maxTokens?: number;
+}
+
+export interface PaddingObject {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+}
+
+export type Padding = number | PaddingObject;
+
 /**
  * Compute the tight bounding box of all diagram elements, labels, and
  * connection waypoints from the element registry.
@@ -193,10 +209,15 @@ const TIGHTEN_PADDING = 10;
  * Handles both shapes (x/y/width/height) and connections (waypoints array).
  * Labels are included via `el.label.x / el.label.y / el.label.width / el.label.height`.
  *
+ * When `options.includeTokenBounds` is true, expands bounds for shapes and waypoints
+ * to encompass TokenCount overlays (bouncing token circles) and moving tokens so
+ * they are never clipped by the SVG viewBox.
+ *
  * @internal Shared between `tightenSvgViewBox` and callers that need raw bounds.
  */
 export function computeElementBounds(
-  allElements: any[]
+  allElements: any[],
+  options?: ComputeElementBoundsOptions
 ): { minX: number; minY: number; maxX: number; maxY: number } | null {
   let minX = Infinity,
     minY = Infinity,
@@ -215,6 +236,18 @@ export function computeElementBounds(
     // Shape bounds
     if (el.x !== undefined && el.y !== undefined && el.width && el.height) {
       update(el.x, el.y, el.x + el.width, el.y + el.height);
+
+      if (options?.includeTokenBounds && !el.waypoints) {
+        // TokenCount overlay sits at { bottom: 10, left: -15 } relative to shape.
+        // Each token circle has r=12.5 (width 25, height 25).
+        // Jump animation shifts Y down by up to 5px.
+        const maxTokens = Math.max(1, options.maxTokens ?? 1);
+        const tokenLeft = el.x - 15;
+        const tokenRight = el.x - 15 + (maxTokens - 1) * 17 + 25;
+        const tokenTop = el.y + el.height - 10;
+        const tokenBottom = el.y + el.height - 10 + 25 + 5; // el.y + el.height + 20
+        update(tokenLeft, tokenTop, tokenRight, tokenBottom);
+      }
     }
     // Label bounds
     if (el.label?.x !== undefined && el.label?.y !== undefined) {
@@ -225,7 +258,11 @@ export function computeElementBounds(
     // Connection waypoints
     if (el.waypoints) {
       for (const wp of el.waypoints) {
-        update(wp.x, wp.y, wp.x, wp.y);
+        if (options?.includeTokenBounds) {
+          update(wp.x - 12.5, wp.y - 12.5, wp.x + 12.5, wp.y + 12.5);
+        } else {
+          update(wp.x, wp.y, wp.x, wp.y);
+        }
       }
     }
   }
@@ -245,25 +282,32 @@ export function computeElementBounds(
  *
  * @param svg         SVG markup from `modeler.saveSVG()`
  * @param allElements All elements from `elementRegistry.getAll()` (optional)
- * @param padding     Padding in px around content bounds. Default: 10
+ * @param padding     Padding in px around content bounds (or PaddingObject). Default: 10
  * @param background  Optional background color (CSS string, e.g. "white", "#FFFFFF")
+ * @param options     Bounds computation options (e.g. `includeTokenBounds`)
  */
 export function tightenSvgViewBox(
   svg: string,
   allElements?: any[],
-  padding = TIGHTEN_PADDING,
-  background?: string
+  padding: Padding = TIGHTEN_PADDING,
+  background?: string,
+  options?: ComputeElementBoundsOptions
 ): string {
   if (!allElements || allElements.length === 0) return cropSvgToViewBox(svg, background);
 
   try {
-    const bounds = computeElementBounds(allElements);
+    const bounds = computeElementBounds(allElements, options);
     if (!bounds) return cropSvgToViewBox(svg, background);
 
-    const vbX = Math.round(bounds.minX - padding);
-    const vbY = Math.round(bounds.minY - padding);
-    const vbW = Math.round(bounds.maxX - bounds.minX + 2 * padding);
-    const vbH = Math.round(bounds.maxY - bounds.minY + 2 * padding);
+    const padTop = typeof padding === 'number' ? padding : (padding?.top ?? TIGHTEN_PADDING);
+    const padRight = typeof padding === 'number' ? padding : (padding?.right ?? TIGHTEN_PADDING);
+    const padBottom = typeof padding === 'number' ? padding : (padding?.bottom ?? TIGHTEN_PADDING);
+    const padLeft = typeof padding === 'number' ? padding : (padding?.left ?? TIGHTEN_PADDING);
+
+    const vbX = Math.round(bounds.minX - padLeft);
+    const vbY = Math.round(bounds.minY - padTop);
+    const vbW = Math.round(bounds.maxX - bounds.minX + padLeft + padRight);
+    const vbH = Math.round(bounds.maxY - bounds.minY + padTop + padBottom);
 
     let updatedSvg = fixMarkerUrls(svg)
       .replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${vbY} ${vbW} ${vbH}"`)
