@@ -95,6 +95,13 @@ describe('bpmn-to-image CLI', () => {
     );
   });
 
+  test('--max-duration limits token simulation time', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const framesDir = join(workDir, 'frames');
+    execFileSync('node', [cliPath, '--max-duration', '0', '--frames', framesDir, fixturePath]);
+    expect(readdirSync(framesDir)).toEqual(['frame-0000.svg']);
+  });
+
   test('--background adds background color to SVG and PNG output', () => {
     workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
     const svgPath = join(workDir, 'out.svg');

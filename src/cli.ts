@@ -42,6 +42,7 @@ interface CliOptions {
   scenario?: string;
   exportScenario: boolean;
   fps?: number;
+  maxDurationMs?: number;
   smooth: boolean;
   encoder?: GifEncoder;
   frames?: string;
@@ -83,6 +84,8 @@ Options:
                            and the scenario's own "fps" (default: 12).
                             Higher = smoother motion at proportionally more
                             render cost.
+      --max-duration <ms>  Maximum simulated duration in milliseconds before
+                           stopping (default: 30000).
       --frames <dir>      Export every token-simulation frame to this directory.
                           Use --format svg (default) or --format png.
       --smooth            Render at a smoother preset frame rate (30fps)
@@ -110,6 +113,7 @@ Examples:
   bpmn-to-image --export-scenario diagram.bpmn diagram.toml
   bpmn-to-image --scenario diagram.toml diagram.bpmn diagram.gif
   bpmn-to-image --scenario diagram.toml --fps 24 diagram.bpmn diagram.gif
+  bpmn-to-image --scenario diagram.toml --max-duration 60000 diagram.bpmn diagram.gif
   bpmn-to-image --scenario diagram.toml --smooth diagram.bpmn diagram-final.gif
   bpmn-to-image --scenario diagram.toml --frames frames diagram.bpmn
   bpmn-to-image --scenario diagram.toml --frames frames --format png diagram.bpmn
@@ -137,6 +141,7 @@ function parseArgs(argv: string[]): CliOptions | null {
   let scenario: string | undefined;
   let exportScenario = false;
   let fps: number | undefined;
+  let maxDurationMs: number | undefined;
   let smooth = false;
   let encoder: GifEncoder | undefined;
   let frames: string | undefined;
@@ -196,6 +201,16 @@ function parseArgs(argv: string[]): CliOptions | null {
         fps = value;
         break;
       }
+      case '--max-duration': {
+        const value = Number(argv[++i]);
+        if (!isFinite(value) || value < 0) {
+          throw new Error(
+            `Invalid --max-duration value: ${argv[i]}. Expected a non-negative number of milliseconds.`
+          );
+        }
+        maxDurationMs = value;
+        break;
+      }
       case '--export-scenario':
         exportScenario = true;
         break;
@@ -239,6 +254,7 @@ function parseArgs(argv: string[]): CliOptions | null {
     scenario,
     exportScenario,
     fps,
+    maxDurationMs,
     smooth,
     encoder,
     frames,
@@ -283,6 +299,7 @@ async function main(): Promise<void> {
     const progress = createTerminalProgressReporter();
     const result = await renderScenarioFrames(xml, scenarioToml, {
       fps: options.fps,
+      maxDurationMs: options.maxDurationMs,
       smooth: options.smooth,
       background: options.background,
       onProgress: progress,
@@ -316,6 +333,7 @@ async function main(): Promise<void> {
       scale: options.scale,
       background: options.background,
       fps: options.fps,
+      maxDurationMs: options.maxDurationMs,
       smooth: options.smooth,
       onProgress,
     };

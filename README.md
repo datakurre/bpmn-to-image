@@ -28,6 +28,7 @@ bpmn-to-image [options] [input] [output]
 - `--scenario <file>` — steer the animation with this TOML scenario file (see [Animated executions](#animated-executions)). Omit it and animated formats render the diagram's own default scenario instead.
 - `--frames <dir>` — export individual token-simulation frames into a directory. Defaults to SVG; combine with `--format png` for PNG frames. `--export-frames` is an alias.
 - `--fps <number>` — animation frame rate, overriding both `--smooth` and the scenario's own `fps` (default: `12`). Higher values trade smoother token motion for proportionally more frames to render.
+- `--max-duration <ms>` — maximum simulated duration before stopping (default: `30000`). Increase this for scenarios that legitimately run longer than 30 seconds.
 - `--smooth` — render at a smoother preset frame rate (30fps) instead of the fast default — for the final render once you're happy with a scenario, after iterating on it at the cheaper default.
 - `--encoder <auto|gifenc|ffmpeg>` — GIF-only encoder choice. `auto` (default) prefers ffmpeg (better palette quality, smaller files) when it's on `PATH`, falling back to the bundled pure-JS `gifenc` otherwise.
 - `--export-scenario` — write a scenario TOML scaffold for the input diagram instead of rendering an image.
