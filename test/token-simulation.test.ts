@@ -67,6 +67,55 @@ const boundaryEventXml = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
+const subProcessXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   id="Definitions_subProcess"
+                   targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_subProcess" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_to_sub</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:subProcess id="SubProcess_1">
+      <bpmn:incoming>Flow_to_sub</bpmn:incoming>
+      <bpmn:outgoing>Flow_from_sub</bpmn:outgoing>
+      <bpmn:startEvent id="SubStartEvent_1">
+        <bpmn:outgoing>Flow_sub_to_task</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="SubTask_1">
+        <bpmn:incoming>Flow_sub_to_task</bpmn:incoming>
+        <bpmn:outgoing>Flow_sub_to_end</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:endEvent id="SubEndEvent_1">
+        <bpmn:incoming>Flow_sub_to_end</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_sub_to_task" sourceRef="SubStartEvent_1" targetRef="SubTask_1" />
+      <bpmn:sequenceFlow id="Flow_sub_to_end" sourceRef="SubTask_1" targetRef="SubEndEvent_1" />
+    </bpmn:subProcess>
+    <bpmn:endEvent id="EndEvent_1">
+      <bpmn:incoming>Flow_from_sub</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_to_sub" sourceRef="StartEvent_1" targetRef="SubProcess_1" />
+    <bpmn:sequenceFlow id="Flow_from_sub" sourceRef="SubProcess_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_subProcess">
+    <bpmndi:BPMNPlane id="BPMNPlane_subProcess" bpmnElement="Process_subProcess">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_1_di" bpmnElement="SubProcess_1" isExpanded="true"><dc:Bounds x="180" y="60" width="300" height="120" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubStartEvent_1_di" bpmnElement="SubStartEvent_1"><dc:Bounds x="200" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubTask_1_di" bpmnElement="SubTask_1"><dc:Bounds x="280" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubEndEvent_1_di" bpmnElement="SubEndEvent_1"><dc:Bounds x="420" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1"><dc:Bounds x="520" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_to_sub_di" bpmnElement="Flow_to_sub"><di:waypoint x="136" y="118" /><di:waypoint x="180" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_sub_to_task_di" bpmnElement="Flow_sub_to_task"><di:waypoint x="236" y="118" /><di:waypoint x="280" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_sub_to_end_di" bpmnElement="Flow_sub_to_end"><di:waypoint x="380" y="118" /><di:waypoint x="420" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_from_sub_di" bpmnElement="Flow_from_sub"><di:waypoint x="480" y="118" /><di:waypoint x="520" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
 /** Extract all `<g class="bts-token" transform="translate(x, y)">` positions from an SVG frame. */
 function tokenPositions(svg: string): { x: number; y: number }[] {
   const positions: { x: number; y: number }[] = [];
@@ -361,12 +410,41 @@ name = "t1"
 
   [[token.step]]
   element = "StartEvent_1"
-`
+`,
+      { maxDurationMs: 5000, tailMs: 500 }
     );
     const countFrames = frames.filter((frame) => frame.svg.includes('bts-token-count'));
     expect(countFrames.length).toBeGreaterThan(0);
     const lastFrame = frames[frames.length - 1];
     expect(lastFrame.atMs).toBeGreaterThanOrEqual(500);
+    // The pause must actually resume: if it never does, the loop only stops
+    // because it hit maxDurationMs, and the token count overlay never clears.
+    expect(lastFrame.atMs).toBeLessThan(5000);
+    expect(lastFrame.svg.includes('bts-token-count')).toBe(false);
+  });
+
+  test('pauses at a sub-process with bouncing token, and resumes into its contents', async () => {
+    const { frames } = await renderScenarioFrames(
+      subProcessXml,
+      `
+task_pause_ms = 500
+
+[[token]]
+name = "t1"
+
+  [[token.step]]
+  element = "StartEvent_1"
+`,
+      { maxDurationMs: 10000, tailMs: 500 }
+    );
+    const countFrames = frames.filter((frame) => frame.svg.includes('bts-token-count'));
+    expect(countFrames.length).toBeGreaterThan(0);
+    const lastFrame = frames[frames.length - 1];
+    // If the sub-process (or its inner task) pause never resumes, the loop
+    // only stops because it hit maxDurationMs, and the token count overlay
+    // never clears.
+    expect(lastFrame.atMs).toBeLessThan(10000);
+    expect(lastFrame.svg.includes('bts-token-count')).toBe(false);
   });
 
   test('pauses at task with bouncing token when step-level pause_ms is configured', async () => {

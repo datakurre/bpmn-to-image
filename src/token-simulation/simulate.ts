@@ -144,6 +144,17 @@ class TokenTracker {
   private readonly tokenNameByScope = new WeakMap<any, string>();
   private readonly tokenNumberByScope = new WeakMap<any, number>();
   private readonly scopeById = new Map<string, any>();
+  /**
+   * Most recently created scope for each element id. `tokenSimulation.simulator.trace`
+   * 'enter' events report the *parent* scope (see `Simulator.enter`, which fires trace
+   * before the entered element's own scope is passed to its behavior), so task-pause
+   * bookkeeping — which must later match the *entered* element's own scope to find its
+   * "continue" subscription — cannot rely on the trace event's `scope`. The
+   * `createScope` event, by contrast, does carry the real new scope (`scope.element`),
+   * and always fires immediately before the corresponding trace 'enter' for the same
+   * element, so this map is safe to read from within that 'enter' handler.
+   */
+  private readonly scopeByElementId = new Map<string, any>();
   private readonly taskWaits: { scope: any; element: any; dueAtMs: number }[] = [];
   private readonly tokens: TrackedToken[];
   private readonly waitStartByScopeId = new Map<string, number>();
@@ -172,6 +183,9 @@ class TokenTracker {
     eventBus.on('tokenSimulation.simulator.createScope', ({ scope }: { scope: any }) => {
       if (scope?.id) {
         this.scopeById.set(scope.id, scope);
+      }
+      if (scope?.element?.id) {
+        this.scopeByElementId.set(scope.element.id, scope);
       }
       if (this.expectingTokenName && !scope.parent) {
         this.tokenNameByScope.set(scope, this.expectingTokenName);
@@ -355,18 +369,24 @@ class TokenTracker {
         pauseMs = defaultPauseMs;
       }
 
+      // The scope on this trace event is the *parent* scope (see
+      // `scopeByElementId`'s doc comment) — the entered element's own scope,
+      // which is what its "continue" subscription will actually be
+      // registered against, must be looked up separately.
+      const ownScope = this.scopeByElementId.get(element.id) ?? scope;
+
       if (pauseMs !== undefined) {
         if (pendingStepEntry) {
           pendingStepEntry.consumed = true;
         }
         if (pauseMs > 0) {
           simulator.setConfig(element, { wait: true });
-          this.taskWaits.push({ scope, element, dueAtMs: now() + pauseMs });
+          this.taskWaits.push({ scope: ownScope, element, dueAtMs: now() + pauseMs });
         } else {
           simulator.setConfig(element, { wait: false });
           const subscription = simulator
             .findSubscriptions({ element })
-            .find((candidate: any) => candidate.scope === scope);
+            .find((candidate: any) => candidate.scope === ownScope);
           if (subscription) {
             subscription.triggerFn();
           }
@@ -376,7 +396,7 @@ class TokenTracker {
           pendingStepEntry.consumed = true;
         }
         simulator.setConfig(element, { wait: true });
-        this.taskWaits.push({ scope, element, dueAtMs: targetAtMs });
+        this.taskWaits.push({ scope: ownScope, element, dueAtMs: targetAtMs });
       }
     });
   }
