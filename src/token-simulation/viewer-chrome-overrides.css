@@ -14,7 +14,8 @@
  * — bpmn.io's free-use license requires that attribution to stay visible;
  * `.bts-token-count` / `.bts-element-notification` — the token badges and
  * state labels bpmn-js-token-simulation overlays directly on elements,
- * i.e. the simulation's actual visualization rather than control chrome.
+ * i.e. the simulation's actual visualization rather than control chrome
+ * (though the "Finished" one loses its text, see below).
  */
 
 .bts-toggle-mode,
@@ -24,6 +25,19 @@
 .bts-notifications,
 .bts-scopes {
   display: none !important;
+}
+
+/*
+ * `SimulationState` pops a "Finished" label onto the process's end element
+ * once every token has completed — worth keeping as a glance-able success
+ * marker, but the text is redundant with the diagram's own end event right
+ * next to it. Hiding just the `.bts-text` span (not the whole
+ * `.bts-element-notification`) leaves a small icon-only badge instead —
+ * `.warning` ("Not supported") is a different, more useful notification
+ * with something to actually say, so it keeps its text.
+ */
+.bts-element-notification.success .bts-text {
+  display: none;
 }
 
 .bjs-container.simulation .djs-container,
@@ -44,4 +58,42 @@
 .bts-token .bts-text {
   transform: translate(10px, 10px);
   dominant-baseline: central;
+}
+
+/*
+ * A handful of bpmn-js-token-simulation elements — notably the moving
+ * token's own number (`.bts-text`, an SVG text with no font-size of its
+ * own) and `.bts-element-notification` — inherit font-size from the host
+ * page instead of setting it explicitly. That's fine on an ordinary page
+ * (~16px), but embedded in a slide deck with a much larger base font size
+ * for slide body text, an inherited font-size this big no longer fits in a
+ * 20px token circle. Reset it at the embed's root so nothing inside
+ * depends on the host page's font size.
+ */
+.bpmn-simulator {
+  font-size: 16px;
+  position: relative;
+}
+
+.bpmn-simulator-fit {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background-color: var(--token-simulation-silver-darken-94, #efefef);
+  color: var(--token-simulation-grey-darken-30, #212121);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.bpmn-simulator-fit:hover,
+.bpmn-simulator-fit:focus-visible {
+  background-color: var(--token-simulation-green-base-44, #10d070);
+  color: var(--token-simulation-white, #ffffff);
 }
