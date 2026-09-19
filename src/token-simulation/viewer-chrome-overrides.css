@@ -1,0 +1,47 @@
+/**
+ * Hides bpmn-js-token-simulation's fixed UI chrome for the embedded live
+ * simulator — the "Token Simulation" toggle pill, the play/pause + reset +
+ * log-toggle button column, the log panel it opens, the bottom
+ * animation-speed control, the transient toast log, the scope-filter token
+ * list, and the colored "simulation active" border around the canvas.
+ * `viewer-entry.ts` auto-enters simulation mode by clicking the (hidden)
+ * toggle on load, so none of these are needed for the embed to run — only
+ * the per-element buttons bpmn-js-token-simulation draws directly on the
+ * diagram (start/trigger buttons, gateway decision arrows:
+ * `.bts-context-pad`) stay visible and interactive.
+ *
+ * Deliberately NOT hidden: `.bjs-powered-by` (the "Powered by bpmn.io" link)
+ * — bpmn.io's free-use license requires that attribution to stay visible;
+ * `.bts-token-count` / `.bts-element-notification` — the token badges and
+ * state labels bpmn-js-token-simulation overlays directly on elements,
+ * i.e. the simulation's actual visualization rather than control chrome.
+ */
+
+.bts-toggle-mode,
+.bts-palette,
+.bts-log,
+.bts-set-animation-speed,
+.bts-notifications,
+.bts-scopes {
+  display: none !important;
+}
+
+.bjs-container.simulation .djs-container,
+.bjs-container.simulation.paused .djs-container,
+.bjs-container.simulation.warning .djs-container {
+  box-shadow: none !important;
+}
+
+/*
+ * bpmn-js-token-simulation positions the moving token's number with a
+ * fixed `transform="translate(10, 14)"`, tuned for a single "1" glyph on
+ * its default (alphabetic) baseline. Since the token-number patch above
+ * can put any number there, center it properly instead: `translate(10,
+ * 10)` lands on the token circle's actual center (it's a 20x20 circle),
+ * and `dominant-baseline: central` centers the glyph on that point
+ * vertically regardless of digit count.
+ */
+.bts-token .bts-text {
+  transform: translate(10px, 10px);
+  dominant-baseline: central;
+}

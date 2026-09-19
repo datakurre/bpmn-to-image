@@ -1,4 +1,4 @@
-import { build, context } from 'esbuild';
+import { build, context, transformSync } from 'esbuild';
 import fs from 'node:fs';
 
 /**
@@ -59,9 +59,52 @@ const tokenSimulationBrowserConfig = {
   plugins: [svgBase64Plugin],
 };
 
-const configs = [nodeConfig, tokenSimulationBrowserConfig];
+/**
+ * Browser-target bundle of bpmn-js's NavigatedViewer + bpmn-js-token-simulation's
+ * viewer module, for embedding a live, interactive simulator directly into a
+ * real browser page (see `src/interactive.ts`). Minified: unlike the other
+ * two bundles (npm package internals, never seen directly), this one is
+ * inlined verbatim into every `--format html` / `renderInteractiveHtml`
+ * output, so its size is the slide/page's size.
+ */
+/** @type {import('esbuild').BuildOptions} */
+const tokenSimulationViewerConfig = {
+  entryPoints: ['src/token-simulation/viewer-entry.ts'],
+  bundle: true,
+  platform: 'browser',
+  target: 'es2020',
+  format: 'iife',
+  minify: true,
+  outfile: 'dist/token-simulation-viewer-bundle.js',
+  plugins: [svgBase64Plugin],
+};
+
+const configs = [nodeConfig, tokenSimulationBrowserConfig, tokenSimulationViewerConfig];
+
+/**
+ * The CSS the interactive viewer bundle needs at runtime (bpmn-js's own
+ * chrome plus bpmn-js-token-simulation's play/pause + token-count chrome),
+ * concatenated and minified into a single asset shipped alongside the JS
+ * bundle — like the JS bundle above, this is inlined verbatim into every
+ * `--format html` / `renderInteractiveHtml` output.
+ */
+function buildViewerCss() {
+  const css = [
+    'node_modules/bpmn-js/dist/assets/diagram-js.css',
+    'node_modules/bpmn-js/dist/assets/bpmn-js.css',
+    'node_modules/bpmn-js-token-simulation/assets/css/bpmn-js-token-simulation.css',
+    'src/token-simulation/viewer-chrome-overrides.css',
+  ]
+    .map((path) => fs.readFileSync(path, 'utf-8'))
+    .join('\n');
+  const minified = transformSync(css, { loader: 'css', minify: true }).code;
+  fs.mkdirSync('dist', { recursive: true });
+  fs.writeFileSync('dist/token-simulation-viewer.css', minified);
+}
 
 const isWatch = process.argv.includes('--watch');
+
+buildViewerCss();
 
 if (isWatch) {
   const contexts = await Promise.all(configs.map((config) => context(config)));

@@ -12,5 +12,10 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*", "test/**/*"],
-  "exclude": ["node_modules", "dist", "src/token-simulation/browser-entry.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/token-simulation/browser-entry.ts",
+    "src/token-simulation/viewer-entry.ts"
+  ]
 }

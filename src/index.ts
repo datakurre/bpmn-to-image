@@ -52,3 +52,10 @@ export {
   type RenderProgress,
 } from './token-simulation';
 export { default as robotModule, RobotTaskRenderer, CustomTextRenderer } from './robot';
+export {
+  renderInteractiveAssetsHtml,
+  renderInteractiveDiagramHtml,
+  renderInteractiveHtml,
+  type InteractiveViewerOptions,
+  type InteractiveHtmlOptions,
+} from './interactive';

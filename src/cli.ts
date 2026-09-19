@@ -21,11 +21,12 @@ import {
   renderScenarioToWebp,
   type GifEncoder,
 } from './token-simulation';
+import { renderInteractiveAssetsHtml, renderInteractiveHtml } from './interactive';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version: PKG_VERSION } = require('../package.json') as { version: string };
 
 type AnimatedFormat = 'gif' | 'apng' | 'mp4' | 'webp';
-type Format = 'svg' | 'png' | AnimatedFormat;
+type Format = 'svg' | 'png' | 'html' | AnimatedFormat;
 
 const ANIMATED_FORMATS: readonly AnimatedFormat[] = ['gif', 'apng', 'mp4', 'webp'];
 
@@ -46,6 +47,9 @@ interface CliOptions {
   smooth: boolean;
   encoder?: GifEncoder;
   frames?: string;
+  id?: string;
+  noAssets: boolean;
+  printViewerAssets: boolean;
 }
 
 function printUsage(): void {
@@ -63,11 +67,13 @@ Arguments:
                           "-" to write to stdout.
 
 Options:
-  -f, --format <svg|png|gif|apng|mp4|webp>
+  -f, --format <svg|png|html|gif|apng|mp4|webp>
                            Output format. Inferred from the output file
                            extension when omitted; defaults to "svg" when
                            writing to stdout. "apng"/"mp4"/"webp" require
-                           ffmpeg.
+                           ffmpeg. "html" renders a self-contained,
+                           interactive simulator embed (see below) instead
+                           of a headless render.
   -s, --scale <number>    Pixel density multiplier (PNG or an animated
                            format). Default: 2.
   -b, --background <color>
@@ -101,6 +107,23 @@ Options:
       --export-scenario   Write a scenario TOML scaffold for the input
                            diagram (covering its tokens/gateways/events)
                            instead of rendering an image.
+      --id <string>        DOM id for the --format html container element.
+                           Default: a short hash of the diagram XML, so
+                           repeated builds of the same diagram produce
+                           identical output.
+      --no-assets          With --format html, omit the shared <style> +
+                           <script> bundle (bpmn-js + token-simulation CSS
+                           and JS) and emit only the small per-diagram
+                           container + init call. Use this for every
+                           diagram after the first one on a page that
+                           already loaded the assets via
+                           --print-viewer-assets or a prior --format html
+                           output.
+      --print-viewer-assets
+                           Write just the shared <style> + <script> bundle
+                           that --format html embeds, and exit — no input
+                           is read. Emit this once per page, then use
+                           --format html --no-assets for every diagram.
   -h, --help               Show this help message and exit.
       --version             Print the version and exit.
 
@@ -120,12 +143,16 @@ Examples:
   bpmn-to-image diagram.bpmn diagram.apng
   bpmn-to-image diagram.bpmn diagram.mp4
   bpmn-to-image diagram.bpmn diagram.webp
+  bpmn-to-image --format html diagram.bpmn diagram.html
+  bpmn-to-image --format html --no-assets diagram.bpmn diagram.html
+  bpmn-to-image --print-viewer-assets assets.html
 `);
 }
 
 function formatFromPath(filePath: string): Format | undefined {
   if (filePath.endsWith('.png')) return 'png';
   if (filePath.endsWith('.svg')) return 'svg';
+  if (filePath.endsWith('.html')) return 'html';
   if (filePath.endsWith('.apng')) return 'apng';
   if (filePath.endsWith('.gif')) return 'gif';
   if (filePath.endsWith('.mp4')) return 'mp4';
@@ -145,6 +172,9 @@ function parseArgs(argv: string[]): CliOptions | null {
   let smooth = false;
   let encoder: GifEncoder | undefined;
   let frames: string | undefined;
+  let id: string | undefined;
+  let noAssets = false;
+  let printViewerAssets = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -159,7 +189,7 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '-f':
       case '--format': {
         const value = argv[++i];
-        const valid: Format[] = ['svg', 'png', 'gif', 'apng', 'mp4', 'webp'];
+        const valid: Format[] = ['svg', 'png', 'html', 'gif', 'apng', 'mp4', 'webp'];
         if (!valid.includes(value as Format)) {
           throw new Error(
             `Invalid --format value: ${value ?? '(missing)'}. Expected one of: ${valid.join(', ')}.`
@@ -227,9 +257,38 @@ function parseArgs(argv: string[]): CliOptions | null {
         encoder = value;
         break;
       }
+      case '--id':
+        id = argv[++i];
+        break;
+      case '--no-assets':
+        noAssets = true;
+        break;
+      case '--print-viewer-assets':
+        printViewerAssets = true;
+        break;
       default:
         positional.push(arg);
     }
+  }
+
+  if (printViewerAssets) {
+    return {
+      input: '-',
+      output: positional[0] && positional[0] !== '-' ? positional[0] : '-',
+      format: 'html',
+      scale,
+      background,
+      scenario,
+      exportScenario,
+      fps,
+      maxDurationMs,
+      smooth,
+      encoder,
+      frames,
+      id,
+      noAssets,
+      printViewerAssets,
+    };
   }
 
   const input = positional[0] && positional[0] !== '-' ? positional[0] : '-';
@@ -258,6 +317,9 @@ function parseArgs(argv: string[]): CliOptions | null {
     smooth,
     encoder,
     frames,
+    id,
+    noAssets,
+    printViewerAssets,
   };
 }
 
@@ -282,7 +344,31 @@ async function main(): Promise<void> {
   }
   if (!options) return;
 
+  if (options.printViewerAssets) {
+    const html = renderInteractiveAssetsHtml();
+    if (options.output === '-') {
+      process.stdout.write(html);
+    } else {
+      fs.writeFileSync(options.output, html);
+    }
+    return;
+  }
+
   const xml = options.input === '-' ? await readStdin() : fs.readFileSync(options.input, 'utf-8');
+
+  if (options.format === 'html') {
+    const html = renderInteractiveHtml(xml, {
+      id: options.id,
+      background: options.background,
+      includeAssets: !options.noAssets,
+    });
+    if (options.output === '-') {
+      process.stdout.write(html);
+    } else {
+      fs.writeFileSync(options.output, html);
+    }
+    return;
+  }
 
   if (options.exportScenario) {
     const template = await exportScenarioTemplate(xml);

@@ -22,7 +22,7 @@ bpmn-to-image [options] [input] [output]
 
 - `input` — path to a `.bpmn`/`.xml` file. Omit or pass `-` to read from stdin.
 - `output` — path to write the rendered image to. Omit or pass `-` to write to stdout.
-- `-f, --format <svg|png|gif|apng|mp4|webp>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout. `apng`/`mp4`/`webp` require ffmpeg.
+- `-f, --format <svg|png|html|gif|apng|mp4|webp>` — output format. Inferred from the output file extension when omitted; defaults to `svg` for stdout. `apng`/`mp4`/`webp` require ffmpeg. `html` renders a self-contained, interactive simulator embed (see [Interactive embed](#interactive-embed)) instead of a headless render.
 - `-s, --scale <number>` — pixel density multiplier (PNG or an animated format). Default: `2`.
 - `-b, --background <color>` — background color (CSS string, e.g. `white`, `#FFFFFF`, `#fafafa`). Default: transparent for SVG/PNG/GIF/APNG/WebP, and `white` for MP4 (which does not support transparency).
 - `--scenario <file>` — steer the animation with this TOML scenario file (see [Animated executions](#animated-executions)). Omit it and animated formats render the diagram's own default scenario instead.
@@ -32,6 +32,9 @@ bpmn-to-image [options] [input] [output]
 - `--smooth` — render at a smoother preset frame rate (30fps) instead of the fast default — for the final render once you're happy with a scenario, after iterating on it at the cheaper default.
 - `--encoder <auto|gifenc|ffmpeg>` — GIF-only encoder choice. `auto` (default) prefers ffmpeg (better palette quality, smaller files) when it's on `PATH`, falling back to the bundled pure-JS `gifenc` otherwise.
 - `--export-scenario` — write a scenario TOML scaffold for the input diagram instead of rendering an image.
+- `--id <string>` — DOM id for the `--format html` container element. Default: a short hash of the diagram XML, so repeated builds of the same diagram produce identical output.
+- `--no-assets` — with `--format html`, omit the shared `<style>` + `<script>` bundle and emit only the small per-diagram container + init call. Use for every diagram after the first on a page that already loaded the assets.
+- `--print-viewer-assets` — write just the shared `<style>` + `<script>` bundle that `--format html` embeds, and exit — no input is read.
 
 Rendering an animated format prints a live progress bar to stderr (when it's a TTY — never mixed into piped/redirected output).
 
@@ -42,6 +45,7 @@ bpmn-to-image --background white diagram.bpmn diagram.png
 cat diagram.bpmn | bpmn-to-image --format png > diagram.png
 bpmn-to-image --scenario scenario.toml --frames frames diagram.bpmn
 bpmn-to-image --scenario scenario.toml --frames frames --format png diagram.bpmn
+bpmn-to-image --format html diagram.bpmn diagram.html
 ```
 
 ## Library
@@ -134,6 +138,35 @@ Three formats need ffmpeg outright (`gifenc` can't produce them) and throw a cle
 - `renderScenarioToWebp` (`framesToWebp`) — animated WebP, smaller than GIF at comparable quality.
 
 Check ffmpeg availability with `isFfmpegAvailable()`. This repo's Nix flake provisions ffmpeg for both the devShell and the packaged CLI (`nix run`/`nix build` wrap the binary with it on `PATH`), so Nix users get all of the above automatically; plain `npm install` users can install ffmpeg themselves the same way, or stick with the always-available GIF fallback.
+
+## Interactive embed
+
+Instead of a pre-rendered image or animation, `--format html` produces a self-contained HTML fragment that runs the token simulation live, in the viewer's own browser: a read-only [`NavigatedViewer`](https://bpmn.io/toolkit/bpmn-js/) with [bpmn-js-token-simulation](https://github.com/bpmn-io/bpmn-js-token-simulation)'s viewer module (play/pause, no palette or editing), plus the same robot-task icon rendering as the headless renderer. There's no scenario to script — like the interactive tool itself, it auto-advances through tasks and waits for a click at any gateway with more than one outgoing flow.
+
+The embed auto-enters simulation mode on load and hides bpmn-js-token-simulation's fixed UI chrome — the "Token Simulation" toggle pill, the play/pause + reset + log-toggle button column, the log panel, the animation-speed control, and the transient toast log — so only the buttons bpmn-js-token-simulation draws directly on the diagram (start/trigger buttons, gateway decision arrows) are visible. The "Powered by bpmn.io" attribution link stays, per [bpmn.io's free-use license](https://bpmn.io/license/).
+
+```bash
+bpmn-to-image --format html diagram.bpmn diagram.html
+```
+
+The output is one `<span>` (the container bpmn-js attaches to — `display:block`, but a `<span>` rather than a `<div>` so it stays valid as the sole content of a Markdown paragraph) + two `<script>`/`<style>` blocks with everything inlined (a minified JS bundle, minified CSS, and the diagram XML as base64) — drop it into any page and it runs. Embedding more than one diagram on the same page, inline each bundle only once:
+
+```bash
+bpmn-to-image --print-viewer-assets assets.html                       # once per page
+bpmn-to-image --format html --no-assets diagram-a.bpmn a.html         # per diagram
+bpmn-to-image --format html --no-assets diagram-b.bpmn b.html
+```
+
+Or from the library:
+
+```ts
+import { renderInteractiveAssetsHtml, renderInteractiveDiagramHtml } from 'bpmn-to-image';
+
+const assetsHtml = renderInteractiveAssetsHtml(); // emit once per page
+const diagramHtml = renderInteractiveDiagramHtml(xml, { id: 'my-diagram', background: 'white' });
+```
+
+`renderInteractiveHtml(xml, options)` combines both into the single self-contained fragment the CLI writes by default; pass `{ includeAssets: false }` to get just the per-diagram fragment instead.
 
 ## Fonts
 

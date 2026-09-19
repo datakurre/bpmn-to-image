@@ -102,6 +102,54 @@ describe('bpmn-to-image CLI', () => {
     expect(readdirSync(framesDir)).toEqual(['frame-0000.svg']);
   });
 
+  test('--format html renders a self-contained interactive embed', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const outPath = join(workDir, 'out.html');
+    execFileSync('node', [cliPath, '--format', 'html', fixturePath, outPath]);
+    const html = readFileSync(outPath, 'utf-8');
+    expect(html).toContain('<style>');
+    expect(html).toContain('window.TokenSimulation');
+    expect(html).toMatch(/<span id="bpmn-sim-[0-9a-f]+" class="bpmn-simulator"/);
+    expect(html).toContain('TokenSimulation(');
+  });
+
+  test('--format html --no-assets omits the shared bundle', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const outPath = join(workDir, 'out.html');
+    execFileSync('node', [cliPath, '--format', 'html', '--no-assets', fixturePath, outPath]);
+    const html = readFileSync(outPath, 'utf-8');
+    expect(html).not.toContain('<style>');
+    expect(html).not.toContain('window.TokenSimulation =');
+    expect(html).toContain('bpmn-simulator');
+  });
+
+  test('--format html --id sets the container id', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const outPath = join(workDir, 'out.html');
+    execFileSync('node', [
+      cliPath,
+      '--format',
+      'html',
+      '--no-assets',
+      '--id',
+      'my-diagram',
+      fixturePath,
+      outPath,
+    ]);
+    const html = readFileSync(outPath, 'utf-8');
+    expect(html).toContain('<span id="my-diagram"');
+    expect(html).toContain('TokenSimulation("my-diagram"');
+  });
+
+  test('--print-viewer-assets writes the shared bundle without reading an input file', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const outPath = join(workDir, 'assets.html');
+    execFileSync('node', [cliPath, '--print-viewer-assets', outPath]);
+    const html = readFileSync(outPath, 'utf-8');
+    expect(html).toContain('<style>');
+    expect(html).toContain('window.TokenSimulation');
+  });
+
   test('--background adds background color to SVG and PNG output', () => {
     workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
     const svgPath = join(workDir, 'out.svg');
