@@ -33,6 +33,9 @@ bpmn-to-image [options] [input] [output]
 - `--encoder <auto|gifenc|ffmpeg>` — GIF-only encoder choice. `auto` (default) prefers ffmpeg (better palette quality, smaller files) when it's on `PATH`, falling back to the bundled pure-JS `gifenc` otherwise.
 - `--export-scenario` — write a scenario TOML scaffold for the input diagram instead of rendering an image.
 - `--id <string>` — DOM id for the `--format html` container element. Default: a short hash of the diagram XML, so repeated builds of the same diagram produce identical output.
+- `--width <css-length>` — with `--format html`, container width (e.g. `600px`, `80%`). Default: `100%`.
+- `--height <css-length>` — with `--format html`, container height (e.g. `60%`). Default: none — a 400px `min-height` floor instead, growing to fill a flex/grid box on the host page; an explicit height opts out of that growth, like on a plain `<img>`/`<video>`.
+- `--align <left|center|right>` — with `--format html`, horizontal alignment when the container doesn't fill the full width available to it (e.g. an explicit `--width`).
 - `--no-assets` — with `--format html`, omit the shared `<style>` + `<script>` bundle and emit only the small per-diagram container + init call. Use for every diagram after the first on a page that already loaded the assets.
 - `--print-viewer-assets` — write just the shared `<style>` + `<script>` bundle that `--format html` embeds, and exit — no input is read.
 
@@ -171,6 +174,8 @@ const diagramHtml = renderInteractiveDiagramHtml(xml, { id: 'my-diagram', backgr
 ```
 
 `renderInteractiveHtml(xml, options)` combines both into the single self-contained fragment the CLI writes by default; pass `{ includeAssets: false }` to get just the per-diagram fragment instead.
+
+`InteractiveViewerOptions` also takes `width`, `height`, and `align` (`'left' | 'center' | 'right'`), mirroring `--width`/`--height`/`--align` above — an explicit `height` (or `width`) adds a `bpmn-simulator-sized` class alongside `bpmn-simulator`, so a host stylesheet can tell "an explicit size was requested" apart from the always-present default `width: 100%` and opt the container out of any fill-available-space layout it otherwise gives `.bpmn-simulator`.
 
 ## Fonts
 

@@ -199,6 +199,30 @@ describe('renderInteractiveDiagramHtml', () => {
     expect(html).toContain('TokenSimulation("my-diagram"');
     expect(html).toContain('"white"');
   });
+
+  test('defaults to a 100% width and a 400px min-height floor, without the -sized class', () => {
+    const html = renderInteractiveDiagramHtml(sampleXml);
+    expect(html).toContain('class="bpmn-simulator"');
+    expect(html).not.toContain('bpmn-simulator-sized');
+    expect(html).toContain('style="display:block;width:100%;min-height:400px"');
+  });
+
+  test('an explicit height replaces the min-height floor and marks the container -sized', () => {
+    const html = renderInteractiveDiagramHtml(sampleXml, { height: '60%' });
+    expect(html).toContain('class="bpmn-simulator bpmn-simulator-sized"');
+    expect(html).toContain('style="display:block;width:100%;height:60%"');
+  });
+
+  test('an explicit width is also honored and marks the container -sized', () => {
+    const html = renderInteractiveDiagramHtml(sampleXml, { width: '600px' });
+    expect(html).toContain('class="bpmn-simulator bpmn-simulator-sized"');
+    expect(html).toContain('style="display:block;width:600px;min-height:400px"');
+  });
+
+  test('align adds an align-<side> class', () => {
+    const html = renderInteractiveDiagramHtml(sampleXml, { align: 'center' });
+    expect(html).toContain('class="bpmn-simulator align-center"');
+  });
 });
 
 describe('renderInteractiveHtml', () => {

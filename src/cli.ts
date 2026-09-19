@@ -50,6 +50,9 @@ interface CliOptions {
   id?: string;
   noAssets: boolean;
   printViewerAssets: boolean;
+  width?: string;
+  height?: string;
+  align?: 'left' | 'center' | 'right';
 }
 
 function printUsage(): void {
@@ -111,6 +114,18 @@ Options:
                            Default: a short hash of the diagram XML, so
                            repeated builds of the same diagram produce
                            identical output.
+      --width <css-length>  With --format html, container width (e.g.
+                           "600px", "80%"). Default: "100%".
+      --height <css-length>
+                           With --format html, container height (e.g.
+                           "60%"). Default: none — a 400px min-height
+                           floor instead, growing to fill a flex/grid box
+                           on the host page. An explicit height opts out
+                           of that growth, like on a plain <img>/<video>.
+      --align <left|center|right>
+                           With --format html, horizontal alignment when
+                           the container doesn't fill the full width
+                           available to it (e.g. an explicit --width).
       --no-assets          With --format html, omit the shared <style> +
                            <script> bundle (bpmn-js + token-simulation CSS
                            and JS) and emit only the small per-diagram
@@ -175,6 +190,9 @@ function parseArgs(argv: string[]): CliOptions | null {
   let id: string | undefined;
   let noAssets = false;
   let printViewerAssets = false;
+  let width: string | undefined;
+  let height: string | undefined;
+  let align: 'left' | 'center' | 'right' | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -260,6 +278,22 @@ function parseArgs(argv: string[]): CliOptions | null {
       case '--id':
         id = argv[++i];
         break;
+      case '--width':
+        width = argv[++i];
+        break;
+      case '--height':
+        height = argv[++i];
+        break;
+      case '--align': {
+        const value = argv[++i];
+        if (value !== 'left' && value !== 'center' && value !== 'right') {
+          throw new Error(
+            `Invalid --align value: ${value ?? '(missing)'}. Expected "left", "center", or "right".`
+          );
+        }
+        align = value;
+        break;
+      }
       case '--no-assets':
         noAssets = true;
         break;
@@ -320,6 +354,9 @@ function parseArgs(argv: string[]): CliOptions | null {
     id,
     noAssets,
     printViewerAssets,
+    width,
+    height,
+    align,
   };
 }
 
@@ -360,6 +397,9 @@ async function main(): Promise<void> {
     const html = renderInteractiveHtml(xml, {
       id: options.id,
       background: options.background,
+      width: options.width,
+      height: options.height,
+      align: options.align,
       includeAssets: !options.noAssets,
     });
     if (options.output === '-') {

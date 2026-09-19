@@ -141,6 +141,28 @@ describe('bpmn-to-image CLI', () => {
     expect(html).toContain('TokenSimulation("my-diagram"');
   });
 
+  test('--format html --width/--height/--align size and align the container', () => {
+    workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
+    const outPath = join(workDir, 'out.html');
+    execFileSync('node', [
+      cliPath,
+      '--format',
+      'html',
+      '--no-assets',
+      '--width',
+      '600px',
+      '--height',
+      '60%',
+      '--align',
+      'center',
+      fixturePath,
+      outPath,
+    ]);
+    const html = readFileSync(outPath, 'utf-8');
+    expect(html).toContain('class="bpmn-simulator bpmn-simulator-sized align-center"');
+    expect(html).toContain('style="display:block;width:600px;height:60%"');
+  });
+
   test('--print-viewer-assets writes the shared bundle without reading an input file', () => {
     workDir = mkdtempSync(join(tmpdir(), 'bpmn-to-image-'));
     const outPath = join(workDir, 'assets.html');

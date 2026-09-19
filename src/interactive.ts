@@ -21,6 +21,23 @@ export interface InteractiveViewerOptions {
   id?: string;
   /** Background color (CSS color string) applied to the container. */
   background?: string;
+  /**
+   * Container width (any CSS length, e.g. "600px" or "80%"). Default:
+   * "100%" — fills whatever box a host page's own layout gives it.
+   */
+  width?: string;
+  /**
+   * Container height (any CSS length, e.g. "60%"). Default: none — the
+   * container gets a 400px `min-height` floor instead, so it stays usable
+   * on a host page with no more specific sizing of its own, while still
+   * free to grow to fill a flex/grid box (see metropolis-marp.css's
+   * `.bpmn-simulator` rules). Passing an explicit height opts out of that
+   * growth in favor of the exact height requested, mirroring how an
+   * explicit `height` on a plain `<img>`/`<video>` does the same there.
+   */
+  height?: string;
+  /** Horizontal alignment when the container doesn't fill the full width available to it (e.g. an explicit `width` narrower than the host page's box). */
+  align?: 'left' | 'center' | 'right';
 }
 
 export interface InteractiveHtmlOptions extends InteractiveViewerOptions {
@@ -89,8 +106,24 @@ export function renderInteractiveDiagramHtml(
   const id = options.id ?? defaultId(xml);
   const xmlBase64 = Buffer.from(xml, 'utf-8').toString('base64');
   const background = options.background ? JSON.stringify(options.background) : 'undefined';
+
+  const explicitlySized = options.width != null || options.height != null;
+  const style = [
+    'display:block',
+    `width:${options.width ?? '100%'}`,
+    options.height ? `height:${options.height}` : 'min-height:400px',
+  ].join(';');
+  const classes = ['bpmn-simulator'];
+  // A host stylesheet (e.g. metropolis-marp.css) needs a way to tell "an
+  // explicit size was requested" apart from the default width, which is
+  // always present in `style` above — that's what lets it grow to fill a
+  // flex/grid box when no explicit size was given, matching an `<img>`
+  // with no width/height attributes of its own.
+  if (explicitlySized) classes.push('bpmn-simulator-sized');
+  if (options.align) classes.push('align-' + options.align);
+
   return [
-    `<span id="${id}" class="bpmn-simulator" style="display:block;width:100%;min-height:400px;"></span>`,
+    `<span id="${id}" class="${classes.join(' ')}" style="${style}"></span>`,
     `<script>TokenSimulation(${JSON.stringify(id)}, ${JSON.stringify(xmlBase64)}, ${background});</script>`,
   ].join('\n');
 }
