@@ -22,7 +22,8 @@ describe('renderInteractiveAssetsHtml', () => {
       join(__dirname, '../src/token-simulation/viewer-chrome-overrides.css'),
       'utf-8'
     );
-    const hidden = overrides.match(/\*\/\s*([\s\S]*?)\{\s*display:\s*none\s*!important;\s*\}/)?.[1] ?? '';
+    const hidden =
+      overrides.match(/\*\/\s*([\s\S]*?)\{\s*display:\s*none\s*!important;\s*\}/)?.[1] ?? '';
     for (const selector of [
       '.bts-toggle-mode',
       '.bts-palette',
@@ -89,10 +90,7 @@ describe('renderInteractiveAssetsHtml', () => {
   });
 
   test('ensures token-simulation color variables resolve on <html>', () => {
-    const entry = readFileSync(
-      join(__dirname, '../src/token-simulation/viewer-entry.ts'),
-      'utf-8'
-    );
+    const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
     // SimulationStyles reads these via getComputedStyle(document.documentElement)
     // — which comes back empty for our bundled `:root {}` block once it's
     // nested deep enough in a host page's own layout (observed with a Marp
@@ -114,23 +112,19 @@ describe('renderInteractiveAssetsHtml', () => {
   });
 
   test('assigns each independent token its own auto-incrementing number', () => {
-    const entry = readFileSync(
-      join(__dirname, '../src/token-simulation/viewer-entry.ts'),
-      'utf-8'
-    );
+    const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
     // Root scopes (no parent — a fresh token from a start event) get the
     // next number; scopes with a parent inherit the parent's number, so a
     // single token splitting at a gateway stays "the same" token.
     expect(entry).toContain("eventBus.on('tokenSimulation.simulator.createScope'");
-    expect(entry).toMatch(/if\s*\(scope\.parent\)\s*\{[\s\S]*?}\s*else\s*\{\s*scope\.tokenNumber = nextTokenNumber\+\+;/);
+    expect(entry).toMatch(
+      /if\s*\(scope\.parent\)\s*\{[\s\S]*?}\s*else\s*\{\s*scope\.tokenNumber = nextTokenNumber\+\+;/
+    );
     expect(entry).toContain("eventBus.on('tokenSimulation.resetSimulation'");
   });
 
   test('fits the diagram from element-registry bounds, not the rendered SVG', () => {
-    const entry = readFileSync(
-      join(__dirname, '../src/token-simulation/viewer-entry.ts'),
-      'utf-8'
-    );
+    const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
     // `canvas.zoom('fit-viewport')` never scales past 100%, leaving a
     // container much bigger than the diagram mostly empty. Setting the
     // viewbox to the diagram's own bounding box scales freely in both
@@ -143,10 +137,7 @@ describe('renderInteractiveAssetsHtml', () => {
   });
 
   test('centers the fit box instead of pinning the diagram to the top-left corner', () => {
-    const entry = readFileSync(
-      join(__dirname, '../src/token-simulation/viewer-entry.ts'),
-      'utf-8'
-    );
+    const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
     // `Canvas#viewbox` maps the given box's top-left corner straight to the
     // viewport origin with no centering of its own — passing it a box
     // matching the diagram's bounds but not the container's aspect ratio
@@ -159,10 +150,7 @@ describe('renderInteractiveAssetsHtml', () => {
   });
 
   test('adds a fit-to-view button that re-runs the fit', () => {
-    const entry = readFileSync(
-      join(__dirname, '../src/token-simulation/viewer-entry.ts'),
-      'utf-8'
-    );
+    const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
     expect(entry).toContain("className = 'bpmn-simulator-fit'");
     expect(entry).toContain('fitDiagram(viewer)');
   });
