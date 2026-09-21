@@ -19,6 +19,7 @@ interface TextOptions {
   box?: { width: number; height?: number; x?: number; y?: number };
   style?: TextStyle;
   padding?: number | TextPadding;
+  align?: string;
   [key: string]: unknown;
 }
 
@@ -85,6 +86,11 @@ function adjustTextOptions(text: string, options?: TextOptions): TextOptions | u
   return options;
 }
 
+/** bpmn-js aligns text "center-top" by default; only "left"/"right" opt out. */
+function isCentered(align?: string): boolean {
+  return align === undefined || align.startsWith('center');
+}
+
 /**
  * Custom text renderer extending bpmn-js TextRenderer to ensure proper box width.
  */
@@ -119,7 +125,18 @@ class CustomTextRenderer extends TextRenderer {
       options?: TextOptions
     ): SVGElement => {
       const adjusted = adjustTextOptions(text, options);
-      return origCreateText(text, adjusted);
+      const element = origCreateText(text, adjusted);
+      // Widening only grows the box to the right, which would push centered
+      // text right by half the growth. Shift it back so it stays centered on
+      // the original box.
+      const growth = (adjusted?.box?.width ?? 0) - (options?.box?.width ?? 0);
+      if (growth > 0 && isCentered(options?.align)) {
+        element.querySelectorAll('tspan').forEach((tspan) => {
+          const x = parseFloat(tspan.getAttribute('x') ?? '0');
+          tspan.setAttribute('x', String(x - growth / 2));
+        });
+      }
+      return element;
     };
 
     (this as unknown as { getDimensions: (t: string, o?: TextOptions) => unknown }).getDimensions =

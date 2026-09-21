@@ -109,4 +109,19 @@ name = "token-1"
     const countFrames = result.frames.filter((frame) => frame.svg.includes('bts-token-count'));
     expect(countFrames.length).toBe(0);
   });
+
+  test('keeps a label centered on its box when the box is widened to fit a word', () => {
+    const renderer = new CustomTextRenderer();
+    const svgText = (options: Record<string, unknown>) =>
+      (renderer as any).createText('Submit', { box: { width: 10, height: 14 }, ...options });
+    const firstX = (el: SVGElement) => parseFloat(el.querySelector('tspan')!.getAttribute('x')!);
+
+    const widened = firstX(svgText({}));
+    const left = firstX(svgText({ align: 'left-top' }));
+    // A widened box is wider than 10px, so unshifted centered text would start
+    // right of 0; after compensation it is centered on the original 10px box
+    // (so it starts left of the box, at (10 - width) / 2).
+    expect(widened).toBeLessThan(0);
+    expect(left).toBe(0);
+  });
 });
