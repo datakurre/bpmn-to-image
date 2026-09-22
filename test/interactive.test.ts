@@ -87,6 +87,17 @@ describe('renderInteractiveAssetsHtml', () => {
       'utf-8'
     );
     expect(overrides).toContain('.bpmn-simulator-fit');
+    expect(overrides).toMatch(/\.bpmn-simulator-fit\s*\{[^}]*top:\s*10px/);
+    expect(overrides).toMatch(/\.bpmn-simulator-fit\s*\{[^}]*right:\s*10px/);
+  });
+
+  test('makes the viewer canvas fill the embed height', () => {
+    const overrides = readFileSync(
+      join(__dirname, '../src/token-simulation/viewer-chrome-overrides.css'),
+      'utf-8'
+    );
+    expect(overrides).toContain('.bpmn-simulator > .bjs-container');
+    expect(overrides).toContain('height: inherit !important');
   });
 
   test('ensures token-simulation color variables resolve on <html>', () => {
@@ -136,6 +147,11 @@ describe('renderInteractiveAssetsHtml', () => {
     expect(entry).toContain('canvas.viewbox({');
   });
 
+  test('ignores root process bounds when fitting the diagram', () => {
+    const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
+    expect(entry).toContain("el.type === 'bpmn:Process'");
+  });
+
   test('centers the fit box instead of pinning the diagram to the top-left corner', () => {
     const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
     // `Canvas#viewbox` maps the given box's top-left corner straight to the
@@ -153,6 +169,7 @@ describe('renderInteractiveAssetsHtml', () => {
     const entry = readFileSync(join(__dirname, '../src/token-simulation/viewer-entry.ts'), 'utf-8');
     expect(entry).toContain("className = 'bpmn-simulator-fit'");
     expect(entry).toContain('fitDiagram(viewer)');
+    expect(entry).toContain('requestAnimationFrame(() => fitDiagram(viewer))');
   });
 
   test('is cached across calls', () => {

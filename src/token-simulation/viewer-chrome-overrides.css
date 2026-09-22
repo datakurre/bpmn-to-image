@@ -75,10 +75,17 @@
   position: relative;
 }
 
+/* Marp wraps embeds in flex paragraphs. Inherit the paragraph's full height
+ * explicitly so bpmn-js does not fall back to its intrinsic canvas height. */
+.bpmn-simulator > .bjs-container,
+.bpmn-simulator > .bjs-container > .djs-container {
+  height: inherit !important;
+}
+
 .bpmn-simulator-fit {
   position: absolute;
-  bottom: 10px;
-  left: 10px;
+  top: 10px;
+  right: 10px;
   width: 30px;
   height: 30px;
   display: flex;

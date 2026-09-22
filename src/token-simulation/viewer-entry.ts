@@ -128,6 +128,10 @@ function computeDiagramBounds(
   };
 
   for (const el of elementRegistry.getAll()) {
+    // The process plane is a root container whose bounds mirror the viewport,
+    // not the actual process content. Including it can make fit-to-view crop
+    // descendants that extend beyond the first row of elements.
+    if (!el.parent || el.type === 'bpmn:Process' || el.type === 'bpmn:Collaboration') continue;
     if (el.waypoints) {
       for (const wp of el.waypoints) {
         grow(wp.x, wp.y);
@@ -163,6 +167,18 @@ function computeDiagramBounds(
  */
 function fitDiagram(viewer: any): void {
   const canvas = viewer.get('canvas');
+  const djsContainer = canvas.getContainer();
+  const bjsContainer = djsContainer?.parentElement as HTMLElement | null;
+  const hostContainer = bjsContainer?.parentElement as HTMLElement | null;
+  if (bjsContainer && hostContainer?.clientHeight) {
+    // Percentage heights resolve against the foreignObject's intrinsic SVG
+    // height in Marp, not the embed's available height. Set the measured host
+    // height explicitly before asking diagram-js for its viewport size.
+    const hostHeight = `${hostContainer.clientHeight}px`;
+    bjsContainer.style.setProperty('height', hostHeight, 'important');
+    djsContainer.style.setProperty('height', hostHeight, 'important');
+    canvas.resized();
+  }
   const bbox = computeDiagramBounds(viewer.get('elementRegistry'));
   if (!bbox || !bbox.width || !bbox.height) return;
 
@@ -217,7 +233,6 @@ function openDiagram(containerId: string, xml: string, background?: string): Pro
       if (warnings && warnings.length) {
         console.log(warnings);
       }
-      fitDiagram(viewer);
       if (container) {
         addFitButton(container, viewer);
       }
@@ -227,6 +242,10 @@ function openDiagram(containerId: string, xml: string, background?: string): Pro
       if (toggle) {
         toggle.click();
       }
+      // Entering simulation mode changes the viewer chrome and its measured
+      // canvas size. Fit once more after that layout has settled so the
+      // initial view matches the fit button's result.
+      requestAnimationFrame(() => fitDiagram(viewer));
     })
     .catch((err: unknown) => {
       console.error(err);
