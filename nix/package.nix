@@ -17,7 +17,7 @@ buildNpmPackage {
   # Generated from package-lock.json via `nix build`/`prefetch-npm-deps`.
   # After changing package-lock.json, run `nix build` once: it fails
   # with a hash mismatch that prints the correct value to paste here.
-  npmDepsHash = "sha256-sOtHeFTEdseAvpKb1/H9KYTHnNviB2xmOqpeRiK9stI=";
+  npmDepsHash = "sha256-qXX4nYy0CsdmSs715QyaPbxLD0uqoS2T1fz7QtE4rf0=";
 
   npmBuildScript = "build";
 

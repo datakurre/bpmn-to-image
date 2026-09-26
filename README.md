@@ -65,6 +65,34 @@ const png = await renderToPng(xml, { scale: 2, background: 'white' });
 
 Both functions accept an optional `background` color and `moddleExtensions` map (merged with the built-in [Camunda 7 / Operaton](https://docs.camunda.org/manual/7.24/) moddle extension) for diagrams that use other BPMN extension namespaces.
 
+They also accept:
+
+- `additionalModules` — extra modules to register with the underlying `BpmnModeler`.
+- `robot` — set to `false` to skip registering the Robot Framework task renderer (the robot icon drawn on service tasks whose id contains "robot"), e.g. when comparing output against fixtures/snapshots that don't expect it. Default: `true`.
+- `onWarning` — called with the array of BPMN import warnings instead of logging them to stderr via `console.error`. Useful for a caller (e.g. an MCP server over stdio) that wants to surface them through its own logging/reporting instead.
+
+### Lower-level modeler API
+
+For callers that manage their own modeler lifecycle (e.g. building up a diagram programmatically, or importing more than one document into the same headless canvas) rather than just rendering one XML document end to end, the pieces `createModelerFromXml` is built from are exported directly:
+
+```ts
+import {
+  createModeler,
+  createModelerFromXml,
+  createHeadlessCanvas,
+  getBpmnModeler,
+} from 'bpmn-to-image';
+
+const modeler = createModeler({ robot: false }); // blank BpmnModeler, nothing imported yet
+await modeler.createDiagram();
+
+// or, lower-level still:
+const container = createHeadlessCanvas(); // the shared jsdom canvas element
+const BpmnModeler = getBpmnModeler(); // the lazily-loaded BpmnModeler constructor
+```
+
+`createModeler(options)` takes the same options as `createModelerFromXml` (`moddleExtensions`, `additionalModules`, `robot`) but returns a modeler with nothing imported into it yet — call `modeler.importXML(xml)` or `modeler.createDiagram()` yourself.
+
 ## Animated executions
 
 `bpmn-to-image` can also render an animation of a diagram "running", by driving [bpmn-js-token-simulation](https://github.com/bpmn-io/bpmn-js-token-simulation) headlessly instead of just exporting a static frame. By itself, token simulation only knows how to auto-advance through tasks — a gateway with more than one outgoing flow, or a catch/boundary event, needs an explicit decision (a mouse click, in the interactive tool). A **scenario** is the headless equivalent of that click stream, expressed as a small TOML file.
@@ -134,6 +162,8 @@ Token motion is real interpolated animation (not a jump per gateway/event), samp
 
 GIF encoding uses the bundled pure-JS [`gifenc`](https://github.com/mattdesl/gifenc) by default (`framesToGif`) — no external tools required, works anywhere `npm install` does. When [`ffmpeg`](https://ffmpeg.org/) is available on `PATH`, `renderScenarioToGif` automatically switches to it instead (`framesToGifWithFfmpeg`), building its palette from _changed_ pixels across frames (`palettegen=stats_mode=diff`) and disabling dithering (`paletteuse=dither=none`) — both a size and a quality win for a mostly-static diagram with one small moving token, since dithering noise compresses far worse than flat color runs. Force one encoder or the other with the `encoder` option / `--encoder` flag.
 
+`gifenc` (used by `framesToGif`) and [`smol-toml`](https://github.com/squirrelchat/smol-toml) (used by `parseScenario`/`--scenario`) are only needed for this animated-output path, not for `renderToSvg`/`renderToPng`/`createModelerFromXml` — so they're declared as `optionalDependencies` and only `require`d the first time one of those functions actually runs. A plain `npm install` still gets them by default; skip them with `npm install --omit=optional` if you only need static rendering, and the corresponding function throws a clear error (rather than the library failing to load at all) if you then call it anyway.
+
 Three formats need ffmpeg outright (`gifenc` can't produce them) and throw a clear error without it:
 
 - `renderScenarioToApng` (`framesToApng`) — true 24-bit color and real alpha, unlike GIF's 256-color palette.
@@ -183,6 +213,7 @@ const diagramHtml = renderInteractiveDiagramHtml(xml, { id: 'my-diagram', backgr
 
 - On Linux/macOS/Windows, system font directories are scanned automatically.
 - Nix builds/shells that set `FONTCONFIG_PATH` are also honored.
+- [devenv](https://devenv.sh) shells are honored too, via `DEVENV_PROFILE` (devenv's merged Nix profile directory) — checked directly since devenv doesn't necessarily export `FONTCONFIG_PATH` itself the way a plain flake devShell does.
 - As a guaranteed fallback (minimal containers, CI runners, AWS Lambda), this package bundles [Liberation Sans](https://github.com/liberationfonts/liberation-fonts) (metrically equivalent to Arial) under `fonts/`.
 
 If genuinely no font files can be found anywhere, `svgToPngWithFallback` (exported for advanced use) returns the SVG instead of a blank-labeled PNG.

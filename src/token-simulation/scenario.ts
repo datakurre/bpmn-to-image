@@ -25,7 +25,24 @@
 
 import { BpmnModdle } from 'bpmn-moddle';
 import camundaModdle from 'camunda-bpmn-moddle/resources/camunda.json';
-import { parse as parseToml } from 'smol-toml';
+import type * as SmolToml from 'smol-toml';
+
+// `smol-toml` is an optional dependency — only required by `parseScenario`,
+// not by the rest of the package — so it's `require`d lazily below rather
+// than imported at module scope, keeping it out of the load path for
+// callers who never parse a scenario.
+function requireSmolToml(): typeof SmolToml {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('smol-toml');
+  } catch (error) {
+    throw new Error(
+      '[bpmn-to-image] parseScenario() requires the optional dependency "smol-toml" — ' +
+        'install it with `npm install smol-toml`.',
+      { cause: error }
+    );
+  }
+}
 
 /**
  * One step in a token's timeline: fires an event (start/intermediate-catch/
@@ -109,6 +126,7 @@ function assertStep(step: unknown, where: string): asserts step is ScenarioStep 
 
 /** Parse a scenario TOML document. */
 export function parseScenario(toml: string): Scenario {
+  const { parse: parseToml } = requireSmolToml();
   const parsed = parseToml(toml) as unknown as Scenario;
 
   if (
