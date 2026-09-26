@@ -18,6 +18,35 @@ export interface CreateModelerOptions {
   moddleExtensions?: Record<string, unknown>;
   /** Additional modules to register with BpmnModeler. */
   additionalModules?: unknown[];
+  /**
+   * Register the Robot Framework task renderer (draws a robot icon, instead
+   * of the default service-task icon, on tasks whose id contains "robot").
+   * Default: true. Set to false for plain bpmn-js rendering, e.g. when a
+   * caller compares output against fixtures/snapshots that don't expect it.
+   */
+  robot?: boolean;
+  /**
+   * Called with the BPMN import warnings instead of logging them to stderr
+   * via `console.error` — lets a caller surface them through its own
+   * logging/reporting instead.
+   */
+  onWarning?: (warnings: unknown[]) => void;
+}
+
+/**
+ * Create a BpmnModeler on the shared headless canvas, without importing any
+ * diagram into it. Useful for callers that manage their own import/blank
+ * diagram lifecycle instead of using `createModelerFromXml`.
+ */
+export function createModeler(options: CreateModelerOptions = {}): any {
+  const container = createHeadlessCanvas();
+  const BpmnModeler = getBpmnModeler();
+  const moddleExtensions = { ...DEFAULT_MODDLE_EXTENSIONS, ...options.moddleExtensions };
+  const additionalModules = [
+    ...(options.robot === false ? [] : [RobotModule]),
+    ...(options.additionalModules ?? []),
+  ];
+  return new BpmnModeler({ container, additionalModules, moddleExtensions });
 }
 
 /** Create a BpmnModeler and import the supplied BPMN 2.0 XML into it. */
@@ -25,16 +54,16 @@ export async function createModelerFromXml(
   xml: string,
   options: CreateModelerOptions = {}
 ): Promise<any> {
-  const container = createHeadlessCanvas();
-  const BpmnModeler = getBpmnModeler();
-  const moddleExtensions = { ...DEFAULT_MODDLE_EXTENSIONS, ...options.moddleExtensions };
-  const additionalModules = [RobotModule, ...(options.additionalModules ?? [])];
-  const modeler = new BpmnModeler({ container, additionalModules, moddleExtensions });
+  const modeler = createModeler(options);
 
   const result = await modeler.importXML(xml);
   const warnings: unknown[] = (result && (result as any).warnings) || [];
   if (warnings.length > 0) {
-    console.error(`[bpmn-to-image] ${warnings.length} warning(s) while importing BPMN XML`);
+    if (options.onWarning) {
+      options.onWarning(warnings);
+    } else {
+      console.error(`[bpmn-to-image] ${warnings.length} warning(s) while importing BPMN XML`);
+    }
   }
 
   return modeler;

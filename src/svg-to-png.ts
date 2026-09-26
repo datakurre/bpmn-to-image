@@ -23,7 +23,9 @@ import { Resvg, type RenderedImage } from '@resvg/resvg-js';
  *
  * Also respects Nix-based font configuration via the `FONTCONFIG_PATH`
  * environment variable (set by the `nix run` / devShell environment), so
- * that Nix-provisioned fonts are found first.
+ * that Nix-provisioned fonts are found first, and via `DEVENV_PROFILE` for
+ * projects using devenv (https://devenv.sh) instead of a plain flake
+ * devShell.
  */
 function getSystemFontDirs(): string[] {
   const dirs: string[] = [];
@@ -41,6 +43,16 @@ function getSystemFontDirs(): string[] {
         if (fs.existsSync(shareFonts)) dirs.push(shareFonts);
       }
     }
+  }
+
+  // devenv (https://devenv.sh) sets DEVENV_PROFILE to the merged Nix profile
+  // for its shell (all `packages`/`languages` outputs symlinked together)
+  // but, unlike a plain `nix develop`/flake devShell, doesn't necessarily
+  // export FONTCONFIG_PATH pointing at it — so font packages added via
+  // devenv.nix's `packages` need this checked directly.
+  const devenvProfile = process.env.DEVENV_PROFILE;
+  if (devenvProfile) {
+    dirs.push(path.join(devenvProfile, 'share', 'fonts'));
   }
 
   // Platform defaults

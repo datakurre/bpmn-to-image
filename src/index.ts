@@ -20,7 +20,8 @@ export {
   type RasterizeOptions,
   type SvgToPngOptions,
 } from './svg-to-png';
-export { createModelerFromXml, type CreateModelerOptions } from './modeler';
+export { createModeler, createModelerFromXml, type CreateModelerOptions } from './modeler';
+export { createHeadlessCanvas, getBpmnModeler } from './headless-canvas';
 export {
   exportScenarioTemplate,
   parseScenario,

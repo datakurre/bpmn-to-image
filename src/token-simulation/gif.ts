@@ -5,12 +5,31 @@
  * `svgToPng`, then quantizes/encodes with `gifenc` (pure JS, no native
  * addon) — keeping the "no Canvas / node-gyp build chain" property this
  * package already has for static PNG output.
+ *
+ * `gifenc` is an optional dependency — only required by this function, not
+ * by the rest of the package — so it's `require`d lazily here rather than
+ * imported at module scope, keeping it out of the load path for callers who
+ * never render an animation.
  */
 
-import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 import { rasterizeSvg } from '../svg-to-png';
+import type * as Gifenc from 'gifenc';
 import type { OnProgress } from './progress';
 import type { AnimationFrame } from './simulate';
+
+function requireGifenc(): typeof Gifenc {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('gifenc');
+  } catch (error) {
+    throw new Error(
+      '[bpmn-to-image] framesToGif() requires the optional dependency "gifenc" — ' +
+        'install it with `npm install gifenc`, or render via ffmpeg instead ' +
+        '(framesToGifWithFfmpeg, or renderScenarioToGif with { encoder: "ffmpeg" }).',
+      { cause: error }
+    );
+  }
+}
 
 export interface FramesToGifOptions {
   /** Pixel density multiplier passed to the SVG rasterizer. Default: 1. */
@@ -39,6 +58,8 @@ export function framesToGif(
   if (frames.length === 0) {
     throw new Error('[bpmn-to-image] cannot encode a GIF from zero frames');
   }
+
+  const { GIFEncoder, quantize, applyPalette } = requireGifenc();
 
   const scale = options.scale ?? 1;
   const background = options.background;
