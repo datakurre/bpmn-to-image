@@ -57,7 +57,9 @@ export const DEFAULT_MODDLE_EXTENSIONS = {
  * `DEFAULT_MODDLE_EXTENSIONS`), so a caller-supplied property name doesn't
  * trigger the same "unknown attribute" import warning.
  */
-function extraCamundaIconProperties(elementTemplateIconProperty: string | string[] | undefined): string[] {
+function extraCamundaIconProperties(
+  elementTemplateIconProperty: string | string[] | undefined
+): string[] {
   const properties = Array.isArray(elementTemplateIconProperty)
     ? elementTemplateIconProperty
     : elementTemplateIconProperty
