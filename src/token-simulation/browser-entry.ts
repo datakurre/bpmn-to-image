@@ -16,10 +16,16 @@
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import TokenSimulationBaseModule from 'bpmn-js-token-simulation/lib/base';
 import RobotModule from '../robot';
+import ElementTemplateIconRendererModule from '../element-template-icon';
 import Animation from 'bpmn-js-token-simulation/lib/animation/Animation';
 import TokenCount from 'bpmn-js-token-simulation/lib/features/token-count/TokenCount';
 import { patchTokenNumberDisplay } from './token-number-patch';
 
 patchTokenNumberDisplay(Animation as any, TokenCount as any);
 
-(window as any).__TokenSimBpmnJS = { BpmnModeler, TokenSimulationBaseModule, RobotModule };
+(window as any).__TokenSimBpmnJS = {
+  BpmnModeler,
+  TokenSimulationBaseModule,
+  RobotModule,
+  ElementTemplateIconRendererModule,
+};

@@ -69,6 +69,8 @@ They also accept:
 
 - `additionalModules` — extra modules to register with the underlying `BpmnModeler`.
 - `robot` — set to `false` to skip registering the Robot Framework task renderer (the robot icon drawn on service tasks whose id contains "robot"), e.g. when comparing output against fixtures/snapshots that don't expect it. Default: `true`.
+- `elementTemplateIcons` — set to `false` to skip registering the element template icon renderer, which draws an element template's icon on tasks/events instead of the default bpmn-js shape icon. It reads the icon (a URL or data URI) from a moddle property on the element — by default `camunda:modelerTemplateIcon`, falling back to `operaton:modelerTemplateIcon` — so it's a no-op unless the imported XML carries one of those (both work out of the box, no `moddleExtensions` setup needed). Default: `true`.
+- `elementTemplateIconProperty` — moddle property, or array of properties checked in order, to read the element template icon from, overriding the `camunda:modelerTemplateIcon` / `operaton:modelerTemplateIcon` defaults above. Only meaningful when `elementTemplateIcons` isn't `false`.
 - `onWarning` — called with the array of BPMN import warnings instead of logging them to stderr via `console.error`. Useful for a caller (e.g. an MCP server over stdio) that wants to surface them through its own logging/reporting instead.
 
 ### Lower-level modeler API
@@ -91,7 +93,7 @@ const container = createHeadlessCanvas(); // the shared jsdom canvas element
 const BpmnModeler = getBpmnModeler(); // the lazily-loaded BpmnModeler constructor
 ```
 
-`createModeler(options)` takes the same options as `createModelerFromXml` (`moddleExtensions`, `additionalModules`, `robot`) but returns a modeler with nothing imported into it yet — call `modeler.importXML(xml)` or `modeler.createDiagram()` yourself.
+`createModeler(options)` takes the same options as `createModelerFromXml` (`moddleExtensions`, `additionalModules`, `robot`, `elementTemplateIcons`, `elementTemplateIconProperty`) but returns a modeler with nothing imported into it yet — call `modeler.importXML(xml)` or `modeler.createDiagram()` yourself.
 
 ## Animated executions
 

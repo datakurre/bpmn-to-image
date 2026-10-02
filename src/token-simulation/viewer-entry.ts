@@ -17,6 +17,7 @@ import TokenSimulationModule from 'bpmn-js-token-simulation/lib/viewer';
 import Animation from 'bpmn-js-token-simulation/lib/animation/Animation';
 import TokenCount from 'bpmn-js-token-simulation/lib/features/token-count/TokenCount';
 import RobotModule from '../robot';
+import ElementTemplateIconRendererModule from '../element-template-icon';
 import { patchTokenNumberDisplay } from './token-number-patch';
 
 patchTokenNumberDisplay(Animation as any, TokenCount as any);
@@ -222,7 +223,7 @@ function openDiagram(containerId: string, xml: string, background?: string): Pro
 
   const viewer = new (BpmnViewer as any)({
     container: '#' + containerId,
-    additionalModules: [TokenSimulationModule, RobotModule],
+    additionalModules: [TokenSimulationModule, RobotModule, ElementTemplateIconRendererModule],
   });
 
   installTokenNumbering(viewer);

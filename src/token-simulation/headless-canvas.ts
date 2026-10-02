@@ -21,6 +21,7 @@ let jsdomInstance: any;
 let BpmnModelerCtor: any;
 let TokenSimulationBaseModule: any;
 let RobotModule: any;
+let ElementTemplateIconRendererModule: any;
 
 function resolveBundlePath(): string {
   // Built alongside dist/index.js by esbuild.config.mjs. When running from
@@ -54,6 +55,7 @@ export function createTokenSimulationCanvas(): HTMLElement {
     BpmnModelerCtor = globals.BpmnModeler;
     TokenSimulationBaseModule = globals.TokenSimulationBaseModule;
     RobotModule = globals.RobotModule;
+    ElementTemplateIconRendererModule = globals.ElementTemplateIconRendererModule;
   }
 
   return jsdomInstance.window.document.getElementById('canvas')!;
@@ -81,4 +83,10 @@ export function getTokenSimulationBaseModule(): any {
 export function getTokenSimulationRobotModule(): any {
   if (!RobotModule) createTokenSimulationCanvas();
   return RobotModule;
+}
+
+/** Return the lazily-loaded element template icon renderer module. */
+export function getTokenSimulationElementTemplateIconModule(): any {
+  if (!ElementTemplateIconRendererModule) createTokenSimulationCanvas();
+  return ElementTemplateIconRendererModule;
 }

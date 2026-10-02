@@ -22,12 +22,13 @@
  */
 
 import { is } from 'bpmn-js/lib/util/ModelUtil';
-import camundaModdle from 'camunda-bpmn-moddle/resources/camunda.json';
+import { DEFAULT_MODDLE_EXTENSIONS } from '../modeler';
 import { tightenSvgViewBox } from '../svg-to-png';
 import {
   createTokenSimulationCanvas,
   getTokenSimulationBaseModule,
   getTokenSimulationBpmnModeler,
+  getTokenSimulationElementTemplateIconModule,
   getTokenSimulationRobotModule,
   getTokenSimulationWindow,
 } from './headless-canvas';
@@ -674,10 +675,12 @@ export async function renderScenarioFrames(
   const BpmnModeler = getTokenSimulationBpmnModeler();
   const TokenSimulationBaseModule = getTokenSimulationBaseModule();
   const RobotModule = getTokenSimulationRobotModule();
-  const moddleExtensions = { camunda: camundaModdle, ...options.moddleExtensions };
+  const ElementTemplateIconRendererModule = getTokenSimulationElementTemplateIconModule();
+  const moddleExtensions = { ...DEFAULT_MODDLE_EXTENSIONS, ...options.moddleExtensions };
   const additionalModules = [
     TokenSimulationBaseModule,
     RobotModule,
+    ElementTemplateIconRendererModule,
     ...(options.additionalModules ?? []),
   ];
 
